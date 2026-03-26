@@ -1,5 +1,14 @@
 <div align="center">
-  <h1>theaios-guardrails</h1>
+  <a href="https://cohorte-ai.github.io/guardrails/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/images/TheAIOS-Guardrails-darkmode.svg">
+      <source media="(prefers-color-scheme: light)" srcset=".github/images/TheAIOS-Guardrails.svg">
+      <img alt="theaios-guardrails" src=".github/images/TheAIOS-Guardrails.svg" width="60%">
+    </picture>
+  </a>
+</div>
+
+<div align="center">
   <h3>Declarative guardrails for AI agents — YAML policies, three-tier approval, any platform.</h3>
 </div>
 
