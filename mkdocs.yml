@@ -58,6 +58,7 @@ nav:
   - Guides:
       - Matchers: matchers.md
       - Integration Guide: integration.md
+      - Generate Policies with AI: ai-policy-generator.md
   - Reference:
       - CLI: cli.md
       - Python API: api-reference.md

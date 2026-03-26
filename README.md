@@ -103,6 +103,18 @@ guardrails inspect --config guardrails.yaml
 guardrails check --config guardrails.yaml --event '{"scope":"input","agent":"test","data":{"content":"hello"}}'
 ```
 
+## Generate Policies with AI
+
+Don't want to write YAML by hand? Use any LLM to generate a policy. Copy-paste one of our [ready-made prompts](https://cohorte-ai.github.io/guardrails/ai-policy-generator/) and get a production-ready YAML file in seconds. Prompts are included for:
+
+- Generating a full policy from scratch
+- Adding rules to an existing policy
+- Industry-specific starters (healthcare, finance, legal, etc.)
+- Converting plain-English rules to YAML
+- Security-auditing an existing policy
+
+Then validate: `guardrails validate --config generated-policy.yaml`
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
