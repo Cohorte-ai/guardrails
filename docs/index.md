@@ -63,13 +63,15 @@ print(decision.outcome)  # "deny"
 
 | Page | What you'll learn |
 |------|-------------------|
+| [Concepts](concepts.md) | How the engine works — evaluation order, profiles, three-tier approval, performance |
+| [Event Format](event-format.md) | The `GuardEvent` structure — what data to pass for each scope, with copy-paste examples |
 | [Writing Policies](policy-syntax.md) | The complete YAML policy reference — rules, profiles, matchers, variables |
 | [Expression Language](expressions.md) | The `when` clause syntax — operators, fields, variables, patterns |
 | [Matchers](matchers.md) | Built-in matchers (regex, keywords, PII) and how to write your own |
-| [Integration Guide](integration.md) | `@guard` decorator, LangChain callback, OpenAI Agents SDK |
+| [Integration Guide](integration.md) | `@guard` decorator, LangChain callback, OpenAI Agents SDK, MCP, HTTP middleware |
+| [Generate Policies with AI](ai-policy-generator.md) | Copy-paste prompts for any LLM to generate valid policy YAML |
 | [CLI Reference](cli.md) | `guardrails validate`, `check`, `inspect`, `audit` |
-| [Python API](api-reference.md) | `Engine`, `load_policy`, `evaluate`, `check` |
-| [Concepts](concepts.md) | How the engine works — evaluation order, profiles, three-tier approval |
+| [Python API](api-reference.md) | `Engine`, `load_policy`, `evaluate`, `check`, all data types |
 
 ## Part of the theaios Ecosystem
 

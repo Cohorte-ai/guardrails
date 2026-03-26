@@ -24,6 +24,9 @@ GuardEvent(
 
 The `data` dict is freeform — you put whatever fields your rules need. The engine doesn't prescribe a schema. Your rules reference fields with dot notation (`recipient.domain`), and missing fields resolve to `null`.
 
+!!! tip "Complete event reference"
+    For the full data structure with copy-paste examples for every scope, see the [Event Format](event-format.md) page.
+
 ### Event Scopes
 
 | Scope | When to use | Typical data fields |

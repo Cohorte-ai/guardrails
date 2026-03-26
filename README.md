@@ -26,7 +26,7 @@
 
 ## What It Does
 
-Write AI agent governance policies in YAML. The engine evaluates every agent action, input, and output against your rules — inline, in under 1ms — and returns allow, deny, require_approval, or redact decisions.
+Write AI agent governance policies in YAML. The engine evaluates every agent action, input, and output against your rules — inline, in ~0.005ms (~200K evaluations/sec) — and returns allow, deny, require_approval, or redact decisions. No LLM calls in the hot path. Pure rule evaluation.
 
 - **YAML policy language** — readable by compliance teams, versioned in git
 - **Three-tier approval** — autonomous / soft-approval / strong-approval
@@ -135,6 +135,18 @@ guardrails inspect --config guardrails.yaml
 guardrails check --config guardrails.yaml --event '{"scope":"input","agent":"test","data":{"content":"hello"}}'
 ```
 
+## Why This Library?
+
+Every agentic platform needs governance. The options today:
+
+| Approach | Problem |
+|----------|---------|
+| **Vendor guardrails** (AWS Bedrock, Salesforce Einstein) | Locked to one platform |
+| **LLM-based guardrails** (NeMo, Lakera) | 100-500ms latency per check, costs money per call |
+| **Build your own** | Months of engineering, no standard format |
+
+theaios-guardrails is **vendor-neutral** (works with any platform), **fast** (~0.005ms, no LLM calls), and **declarative** (YAML files that compliance teams can read).
+
 ## Generate Policies with AI
 
 Don't want to write YAML by hand? Use any LLM to generate a policy. Copy-paste one of our [ready-made prompts](https://cohorte-ai.github.io/guardrails/ai-policy-generator/) and get a production-ready YAML file in seconds. Prompts are included for:
@@ -146,6 +158,14 @@ Don't want to write YAML by hand? Use any LLM to generate a policy. Copy-paste o
 - Security-auditing an existing policy
 
 Then validate: `guardrails validate --config generated-policy.yaml`
+
+## Documentation
+
+Full documentation at **[cohorte-ai.github.io/guardrails](https://cohorte-ai.github.io/guardrails/)** — including the [policy syntax reference](https://cohorte-ai.github.io/guardrails/policy-syntax/), [event format](https://cohorte-ai.github.io/guardrails/event-format/), [expression language](https://cohorte-ai.github.io/guardrails/expressions/), [integration guide](https://cohorte-ai.github.io/guardrails/integration/), and [AI policy generator prompts](https://cohorte-ai.github.io/guardrails/ai-policy-generator/).
+
+## Part of the theaios Ecosystem
+
+theaios-guardrails is one of the [theaios](https://github.com/Cohorte-ai) trust layer components. It works standalone or alongside [theaios-trustgate](https://github.com/Cohorte-ai/trustgate) for formal AI reliability certification.
 
 ## License
 

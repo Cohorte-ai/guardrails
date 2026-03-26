@@ -2,6 +2,7 @@
 
 __version__ = "0.1.0"
 
+from theaios.guardrails.adapters.decorator import ApprovalRequired, GuardDenied, guard
 from theaios.guardrails.config import ConfigError, load_policy
 from theaios.guardrails.engine import Engine
 from theaios.guardrails.matchers import Matcher, get_matcher, list_matchers, register_matcher
@@ -46,6 +47,10 @@ __all__ = [
     "evaluate",
     "check",
     "ConfigError",
+    # Decorator & exceptions
+    "guard",
+    "GuardDenied",
+    "ApprovalRequired",
     # Types
     "Decision",
     "GuardEvent",
