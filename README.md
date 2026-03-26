@@ -147,6 +147,45 @@ Every agentic platform needs governance. The options today:
 
 theaios-guardrails is **vendor-neutral** (works with any platform), **fast** (~0.005ms, no LLM calls), and **declarative** (YAML files that compliance teams can read).
 
+## Benchmarks
+
+Tested against independent, real-world datasets we did not create. Full methodology and reproduction steps in [`benchmarks/`](benchmarks/).
+
+### Prompt Injection Detection
+
+Evaluated on [deepset/prompt-injections](https://huggingface.co/datasets/deepset/prompt-injections) (held-out test set, 164 samples):
+
+| Matcher | Precision | Recall | F1 | False positives |
+|---------|-----------|--------|----|----------------|
+| Naive (29 patterns) | 100% | 3.3% | 6.3% | 0 |
+| Optimized (143 patterns) | 100% | 42.6% | 59.8% | 0 |
+
+**Zero false positives.** Keyword matching never blocks a benign query. Recall is tunable — add more patterns to catch more attacks, at the risk of eventually hitting false positives. Each team finds their own equilibrium. See the [tradeoff analysis](benchmarks/).
+
+### PII Detection
+
+Evaluated on [ai4privacy/pii-masking-400k](https://huggingface.co/datasets/ai4privacy/pii-masking-400k) (5,000 samples):
+
+| PII Type | Detection Rate |
+|----------|---------------|
+| Email | 100% |
+| Credit card | 61.3% |
+| Overall | 94.0% |
+
+Regex covers structured PII (SSN, email, phone, credit card, IBAN, IP). Names and addresses require NER models — out of scope for rule-based matching.
+
+### vs. LLM-Based Guardrails
+
+| | Keywords (this library) | LLM-based (NeMo, Lakera) |
+|---|---|---|
+| **Latency** | ~0.005ms | 100-500ms |
+| **Cost per check** | $0 | $0.001-0.01 |
+| **Precision** | ~100% | 90-98% |
+| **Recall** | 30-60% (tunable) | 80-95% |
+| **Determinism** | Same input = same output | Non-deterministic |
+
+Use keyword matching as your **first layer** (fast, free, deterministic). Add LLM-based classification as a **second layer** for high-stakes scopes.
+
 ## Generate Policies with AI
 
 Don't want to write YAML by hand? Use any LLM to generate a policy. Copy-paste one of our [ready-made prompts](https://cohorte-ai.github.io/guardrails/ai-policy-generator/) and get a production-ready YAML file in seconds. Prompts are included for:

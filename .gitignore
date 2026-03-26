@@ -10,5 +10,6 @@ build/
 .pytest_cache/
 .ruff_cache/
 .guardrails_audit/
-benchmarks/
+benchmarks/data/
+benchmarks/*/results*.json
 site/
