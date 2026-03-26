@@ -1,0 +1,132 @@
+version: "1.0"
+metadata:
+  name: acme-corp-ai-policy
+  description: Enterprise AI agent governance policy for ACME Corporation
+  author: compliance@acme.com
+
+variables:
+  company_domain: "acme.com"
+  sensitive_domains: ["finance", "legal", "hr"]
+  max_actions_per_minute: 100
+
+profiles:
+  default:
+    default_tier: autonomous
+
+  sales-agent:
+    extends: default
+    allow: [read_crm, draft_email, search_knowledge, schedule_meeting]
+    deny: [commit_pricing, modify_contract, access_financials]
+
+  finance-agent:
+    extends: default
+    default_tier: soft
+    allow: [read_ledger, generate_report, read_invoices]
+    deny: [approve_payment, modify_budget, wire_transfer]
+
+  hr-agent:
+    extends: default
+    default_tier: soft
+    allow: [read_policies, draft_letter, search_handbook]
+    deny: [modify_salary, terminate_employee, access_medical]
+
+rules:
+  # --- Security ---
+  - name: block-prompt-injection
+    description: Block detected prompt injection attempts
+    scope: input
+    when: "content matches prompt_injection"
+    then: deny
+    reason: "Potential prompt injection detected"
+    severity: critical
+    tags: [security, injection]
+
+  # --- Privacy ---
+  - name: redact-pii-in-output
+    description: Redact PII from all agent outputs
+    scope: output
+    when: "content matches pii"
+    then: redact
+    patterns: [ssn, email_addr, phone]
+    severity: high
+    tags: [privacy, pii, compliance]
+
+  # --- Communication ---
+  - name: no-external-email-without-approval
+    description: External emails require human review before sending
+    scope: action
+    when: "action == 'send_email' and recipient.domain != $company_domain"
+    then: require_approval
+    tier: soft
+    severity: medium
+    tags: [compliance, email]
+
+  # --- Financial controls ---
+  - name: financial-writes-need-strong-approval
+    description: All financial write operations require strong approval
+    scope: action
+    when: "action == 'write' and resource.domain in $sensitive_domains"
+    then: require_approval
+    tier: strong
+    severity: high
+    tags: [compliance, finance]
+
+  # --- Cross-agent isolation ---
+  - name: no-finance-data-to-sales
+    description: Finance agents cannot share raw financial data with sales agents
+    scope: cross_agent
+    from: finance-agent
+    to: sales-agent
+    when: "message matches financial_data"
+    then: deny
+    reason: "Financial data sharing restricted between these agent roles"
+    severity: high
+    tags: [data-isolation, compliance]
+
+  # --- Rate limiting ---
+  - name: rate-limit-actions
+    description: Prevent excessive agent actions
+    scope: action
+    rate_limit:
+      max: 100
+      window: 60
+      key: agent
+    then: deny
+    reason: "Rate limit exceeded — max 100 actions per minute"
+    severity: medium
+    tags: [safety, rate-limit]
+
+matchers:
+  prompt_injection:
+    type: keyword_list
+    patterns:
+      - "ignore previous instructions"
+      - "ignore all previous"
+      - "you are now"
+      - "disregard above"
+      - "system prompt"
+      - "reveal your instructions"
+      - "override safety"
+      - "jailbreak"
+    options:
+      case_insensitive: true
+
+  pii:
+    type: regex
+    patterns:
+      ssn: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+      email_addr: "\\b[\\w.-]+@[\\w.-]+\\.\\w+\\b"
+      phone: "\\b\\d{3}[\\s.-]\\d{3}[\\s.-]\\d{4}\\b"
+      credit_card: "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
+
+  financial_data:
+    type: keyword_list
+    patterns:
+      - "revenue"
+      - "profit margin"
+      - "quarterly earnings"
+      - "salary"
+      - "compensation"
+      - "operating income"
+    options:
+      case_insensitive: true

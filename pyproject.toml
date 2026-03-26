@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "theaios-guardrails"
+version = "0.1.0"
+description = "Declarative YAML-based policy engine for AI agent guardrails"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Charafeddine Mouzouni", email = "charafeddine@cohorte.co" },
+]
+keywords = ["guardrails", "ai-safety", "policy-engine", "agent-governance", "ai-agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+trustgate = ["theaios-trustgate>=0.2"]
+langchain = ["langchain-core>=0.3"]
+all = ["theaios-guardrails[trustgate,langchain]"]
+dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.10", "types-pyyaml>=6.0", "pytest-asyncio>=1.0"]
+
+[project.scripts]
+guardrails = "theaios.guardrails.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Cohorte-ai/guardrails"
+Documentation = "https://cohorte-ai.github.io/guardrails/"
+Repository = "https://github.com/Cohorte-ai/guardrails"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/theaios"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true

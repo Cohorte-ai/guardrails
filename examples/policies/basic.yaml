@@ -1,0 +1,40 @@
+version: "1.0"
+metadata:
+  name: basic-guardrails
+  description: Minimal guardrail policy for getting started
+
+rules:
+  - name: block-prompt-injection
+    description: Block common prompt injection attempts
+    scope: input
+    when: "content matches prompt_injection"
+    then: deny
+    reason: "Potential prompt injection detected"
+    severity: critical
+    tags: [security]
+
+  - name: redact-pii
+    description: Redact PII from agent outputs
+    scope: output
+    when: "content matches pii"
+    then: redact
+    patterns: [ssn, email, phone]
+    severity: high
+    tags: [privacy]
+
+matchers:
+  prompt_injection:
+    type: keyword_list
+    patterns:
+      - "ignore previous instructions"
+      - "ignore all previous"
+      - "you are now"
+      - "disregard above"
+      - "system prompt"
+      - "reveal your instructions"
+    options:
+      case_insensitive: true
+
+  pii:
+    type: pii
+    patterns: {}
