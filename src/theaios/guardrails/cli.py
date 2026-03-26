@@ -139,7 +139,7 @@ def check(config_path: str, event_json: str, dry_run: bool, output: str) -> None
     else:
         print_evaluation_result(decision)
 
-    if decision.is_denied:
+    if decision.is_denied and not decision.dry_run:
         sys.exit(1)
 
 
