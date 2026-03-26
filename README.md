@@ -94,6 +94,29 @@ print(decision.outcome)  # "deny"
 print(decision.rule)     # "block-prompt-injection"
 ```
 
+**Events** tell the engine what's happening. Each event has a `scope`, an `agent`, and a `data` dict with the fields your rules reference:
+
+```python
+# Check an agent input for prompt injection
+engine.evaluate(GuardEvent(scope="input", agent="my-agent", data={"content": "user message here"}))
+
+# Check an agent action (email, API call, etc.)
+engine.evaluate(GuardEvent(scope="action", agent="sales-agent", data={
+    "action": "send_email",
+    "recipient": {"domain": "external.com"},
+}))
+
+# Check agent output for PII
+engine.evaluate(GuardEvent(scope="output", agent="my-agent", data={"content": "SSN: 123-45-6789"}))
+
+# Check cross-agent communication
+engine.evaluate(GuardEvent(scope="cross_agent", agent="finance-agent", data={
+    "message": "Q3 revenue was $42M",
+}, source_agent="finance-agent", target_agent="sales-agent"))
+```
+
+Five scopes: `input`, `output`, `action`, `tool_call`, `cross_agent`. The `data` dict is freeform — your rules reference fields with dot notation (`recipient.domain`). See the full [Event Format](https://cohorte-ai.github.io/guardrails/event-format/) reference.
+
 **Or with the decorator:**
 
 ```python

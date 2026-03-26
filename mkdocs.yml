@@ -53,6 +53,7 @@ nav:
   - Home: index.md
   - Getting Started:
       - Concepts: concepts.md
+      - Event Format: event-format.md
       - Writing Policies: policy-syntax.md
       - Expression Language: expressions.md
   - Guides:
