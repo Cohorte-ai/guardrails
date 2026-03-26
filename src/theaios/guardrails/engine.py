@@ -58,9 +58,7 @@ class Engine:
             self._compiled_rules.append((rule, ast))
 
         # Sort by severity (critical first), preserving declaration order within same severity
-        self._compiled_rules.sort(
-            key=lambda pair: SEVERITY_ORDER.get(pair[0].severity, 99)
-        )
+        self._compiled_rules.sort(key=lambda pair: SEVERITY_ORDER.get(pair[0].severity, 99))
 
         # Instantiate matchers
         self._matchers: dict[str, Matcher] = {}
@@ -194,14 +192,16 @@ class Engine:
                     )
 
             elif rule.then == "redact":
-                redact_decisions.append(Decision(
-                    outcome="redact",
-                    rule=rule.name,
-                    reason=rule.reason,
-                    severity=rule.severity,
-                    dry_run=self._dry_run,
-                    metadata={"patterns": rule.patterns},
-                ))
+                redact_decisions.append(
+                    Decision(
+                        outcome="redact",
+                        rule=rule.name,
+                        reason=rule.reason,
+                        severity=rule.severity,
+                        dry_run=self._dry_run,
+                        metadata={"patterns": rule.patterns},
+                    )
+                )
 
         elapsed = (time.perf_counter() - start) * 1000
 
@@ -255,7 +255,9 @@ class Engine:
         return f"{rule.name}:{key_value}"
 
     def _apply_redactions(
-        self, event: GuardEvent, pattern_names: list[str],
+        self,
+        event: GuardEvent,
+        pattern_names: list[str],
     ) -> dict[str, str] | None:
         """Apply redactions to event content fields using named matchers."""
         content = event.data.get("content")

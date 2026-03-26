@@ -9,7 +9,8 @@ from theaios.guardrails.types import MatcherConfig
 class TestRegexMatcher:
     def test_named_patterns_match(self) -> None:
         config = MatcherConfig(
-            name="test", type="regex",
+            name="test",
+            type="regex",
             patterns={"ssn": r"\b\d{3}-\d{2}-\d{4}\b"},
         )
         m = RegexMatcher(config)
@@ -18,7 +19,8 @@ class TestRegexMatcher:
 
     def test_unnamed_patterns_match(self) -> None:
         config = MatcherConfig(
-            name="test", type="regex",
+            name="test",
+            type="regex",
             patterns=[r"\d{3}-\d{2}-\d{4}", r"\b\w+@\w+\.\w+\b"],
         )
         m = RegexMatcher(config)
@@ -28,7 +30,8 @@ class TestRegexMatcher:
 
     def test_case_insensitive(self) -> None:
         config = MatcherConfig(
-            name="test", type="regex",
+            name="test",
+            type="regex",
             patterns=[r"secret"],
             options={"case_insensitive": True},
         )
@@ -37,7 +40,8 @@ class TestRegexMatcher:
 
     def test_redact_named(self) -> None:
         config = MatcherConfig(
-            name="test", type="regex",
+            name="test",
+            type="regex",
             patterns={"ssn": r"\b\d{3}-\d{2}-\d{4}\b"},
         )
         m = RegexMatcher(config)
@@ -47,7 +51,8 @@ class TestRegexMatcher:
 
     def test_redact_unnamed(self) -> None:
         config = MatcherConfig(
-            name="test", type="regex",
+            name="test",
+            type="regex",
             patterns=[r"\d{3}-\d{2}-\d{4}"],
         )
         m = RegexMatcher(config)
@@ -56,7 +61,8 @@ class TestRegexMatcher:
 
     def test_specific_pattern_match(self) -> None:
         config = MatcherConfig(
-            name="test", type="regex",
+            name="test",
+            type="regex",
             patterns={
                 "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
                 "email": r"\b\w+@\w+\.\w+\b",

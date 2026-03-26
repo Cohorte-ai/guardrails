@@ -82,13 +82,15 @@ def verify(
             result.passed += 1
         else:
             result.failed += 1
-            result.failures.append({
-                "test_name": test.get("name", "unnamed"),
-                "expected_outcome": expected_outcome,
-                "actual_outcome": decision.outcome,
-                "expected_rule": expected_rule,
-                "actual_rule": decision.rule,
-            })
+            result.failures.append(
+                {
+                    "test_name": test.get("name", "unnamed"),
+                    "expected_outcome": expected_outcome,
+                    "actual_outcome": decision.outcome,
+                    "expected_rule": expected_rule,
+                    "actual_rule": decision.rule,
+                }
+            )
 
     if result.total_tests > 0:
         result.catch_rate = result.passed / result.total_tests

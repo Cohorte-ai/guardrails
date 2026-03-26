@@ -174,7 +174,7 @@ class TestEvaluator:
     def test_complex_expression(self) -> None:
         ast = compile_expression(
             'action == "send_email" and recipient.domain != $company_domain '
-            'and not recipient.domain in $internal_domains'
+            "and not recipient.domain in $internal_domains"
         )
         ctx = {
             "action": "send_email",

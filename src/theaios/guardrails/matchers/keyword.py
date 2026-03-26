@@ -39,7 +39,7 @@ class KeywordMatcher(Matcher):
                 # Case-insensitive replacement
                 idx = result.lower().find(keyword)
                 while idx != -1:
-                    result = result[:idx] + "[REDACTED]" + result[idx + len(keyword):]
+                    result = result[:idx] + "[REDACTED]" + result[idx + len(keyword) :]
                     idx = result.lower().find(keyword, idx + len("[REDACTED]"))
             else:
                 result = result.replace(keyword, "[REDACTED]")

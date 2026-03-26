@@ -47,7 +47,8 @@ class TestPIIMatcher:
 
     def test_custom_patterns_override(self) -> None:
         config = MatcherConfig(
-            name="pii", type="pii",
+            name="pii",
+            type="pii",
             patterns={"custom_id": r"ID-\d{6}"},
         )
         m = PIIMatcher(config)

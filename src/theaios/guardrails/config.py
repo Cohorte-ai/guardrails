@@ -103,22 +103,24 @@ def _parse_policy(raw: dict[str, object]) -> PolicyConfig:
             tags = [str(t) for t in tags_raw] if isinstance(tags_raw, list) else []
             patterns_raw = rraw.get("patterns", [])
             patterns = [str(p) for p in patterns_raw] if isinstance(patterns_raw, list) else []
-            rules.append(RuleConfig(
-                name=str(rraw.get("name", "")),
-                scope=str(rraw.get("scope", "")),
-                then=str(rraw.get("then", "")),
-                description=str(rraw.get("description", "")),
-                when=str(rraw.get("when", "")),
-                reason=str(rraw.get("reason", "")),
-                severity=str(rraw.get("severity", "medium")),
-                tier=str(rraw.get("tier", "")),
-                enabled=bool(rraw.get("enabled", True)),
-                tags=tags,
-                patterns=patterns,
-                rate_limit=rate_limit,
-                from_agent=str(rraw.get("from", "")),
-                to_agent=str(rraw.get("to", "")),
-            ))
+            rules.append(
+                RuleConfig(
+                    name=str(rraw.get("name", "")),
+                    scope=str(rraw.get("scope", "")),
+                    then=str(rraw.get("then", "")),
+                    description=str(rraw.get("description", "")),
+                    when=str(rraw.get("when", "")),
+                    reason=str(rraw.get("reason", "")),
+                    severity=str(rraw.get("severity", "medium")),
+                    tier=str(rraw.get("tier", "")),
+                    enabled=bool(rraw.get("enabled", True)),
+                    tags=tags,
+                    patterns=patterns,
+                    rate_limit=rate_limit,
+                    from_agent=str(rraw.get("from", "")),
+                    to_agent=str(rraw.get("to", "")),
+                )
+            )
 
     # Matchers
     matchers: dict[str, MatcherConfig] = {}
@@ -220,9 +222,7 @@ def validate_policy(config: PolicyConfig) -> list[str]:
     # Profiles
     for name, profile in config.profiles.items():
         if profile.extends and profile.extends not in config.profiles:
-            errors.append(
-                f"profiles.{name}: extends '{profile.extends}' does not exist"
-            )
+            errors.append(f"profiles.{name}: extends '{profile.extends}' does not exist")
         if profile.default_tier not in VALID_TIERS:
             errors.append(
                 f"profiles.{name}: invalid default_tier '{profile.default_tier}', "

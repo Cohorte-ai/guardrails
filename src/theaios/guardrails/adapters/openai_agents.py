@@ -41,24 +41,30 @@ class OpenAIAgentsGuardrail:
 
     def check_input(self, content: str) -> Decision:
         """Check an input prompt against guardrails."""
-        return self._engine.evaluate(GuardEvent(
-            scope="input",
-            agent=self._agent,
-            data={"content": content},
-        ))
+        return self._engine.evaluate(
+            GuardEvent(
+                scope="input",
+                agent=self._agent,
+                data={"content": content},
+            )
+        )
 
     def check_output(self, content: str) -> Decision:
         """Check an output response against guardrails."""
-        return self._engine.evaluate(GuardEvent(
-            scope="output",
-            agent=self._agent,
-            data={"content": content},
-        ))
+        return self._engine.evaluate(
+            GuardEvent(
+                scope="output",
+                agent=self._agent,
+                data={"content": content},
+            )
+        )
 
     def check_tool_call(self, tool_name: str, arguments: dict[str, object]) -> Decision:
         """Check a tool call against guardrails."""
-        return self._engine.evaluate(GuardEvent(
-            scope="tool_call",
-            agent=self._agent,
-            data={"tool_name": tool_name, "arguments": arguments},
-        ))
+        return self._engine.evaluate(
+            GuardEvent(
+                scope="tool_call",
+                agent=self._agent,
+                data={"tool_name": tool_name, "arguments": arguments},
+            )
+        )

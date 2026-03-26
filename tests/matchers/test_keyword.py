@@ -9,7 +9,8 @@ from theaios.guardrails.types import MatcherConfig
 class TestKeywordMatcher:
     def test_basic_match(self) -> None:
         config = MatcherConfig(
-            name="test", type="keyword_list",
+            name="test",
+            type="keyword_list",
             patterns=["ignore previous instructions", "you are now"],
         )
         m = KeywordMatcher(config)
@@ -18,7 +19,8 @@ class TestKeywordMatcher:
 
     def test_case_insensitive(self) -> None:
         config = MatcherConfig(
-            name="test", type="keyword_list",
+            name="test",
+            type="keyword_list",
             patterns=["ignore previous instructions"],
             options={"case_insensitive": True},
         )
@@ -28,7 +30,8 @@ class TestKeywordMatcher:
 
     def test_case_sensitive(self) -> None:
         config = MatcherConfig(
-            name="test", type="keyword_list",
+            name="test",
+            type="keyword_list",
             patterns=["secret"],
             options={"case_insensitive": False},
         )
@@ -38,7 +41,8 @@ class TestKeywordMatcher:
 
     def test_redact(self) -> None:
         config = MatcherConfig(
-            name="test", type="keyword_list",
+            name="test",
+            type="keyword_list",
             patterns=["secret"],
         )
         m = KeywordMatcher(config)

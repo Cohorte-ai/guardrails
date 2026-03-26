@@ -69,9 +69,7 @@ def get_matcher(name: str, config: MatcherConfig) -> Matcher:
     """Instantiate a registered matcher by name with its config."""
     if name not in _REGISTRY:
         available = sorted(_REGISTRY.keys())
-        raise KeyError(
-            f"Unknown matcher type '{name}'. Available: {available}"
-        )
+        raise KeyError(f"Unknown matcher type '{name}'. Available: {available}")
     return _REGISTRY[name](config)  # type: ignore[call-arg]
 
 

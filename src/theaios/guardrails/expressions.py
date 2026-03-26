@@ -163,9 +163,7 @@ def tokenize(source: str) -> list[Token]:
                 break
 
         if not matched:
-            raise ExpressionError(
-                f"Unexpected character '{source[pos]}'", source=source, pos=pos
-            )
+            raise ExpressionError(f"Unexpected character '{source[pos]}'", source=source, pos=pos)
 
     tokens.append(Token(type=TokenType.EOF, value="", pos=pos))
     return tokens
@@ -310,9 +308,17 @@ class _Parser:
         left = self._primary()
 
         comp_ops = {
-            TokenType.EQ, TokenType.NEQ, TokenType.GT, TokenType.LT,
-            TokenType.GTE, TokenType.LTE, TokenType.MATCHES, TokenType.CONTAINS,
-            TokenType.STARTS_WITH, TokenType.ENDS_WITH, TokenType.IN,
+            TokenType.EQ,
+            TokenType.NEQ,
+            TokenType.GT,
+            TokenType.LT,
+            TokenType.GTE,
+            TokenType.LTE,
+            TokenType.MATCHES,
+            TokenType.CONTAINS,
+            TokenType.STARTS_WITH,
+            TokenType.ENDS_WITH,
+            TokenType.IN,
         }
 
         if self._peek().type in comp_ops:
@@ -371,9 +377,7 @@ class _Parser:
         if tok.type == TokenType.LBRACKET:
             return self._list_literal()
 
-        raise ExpressionError(
-            f"Unexpected token '{tok.value}'", source=self._source, pos=tok.pos
-        )
+        raise ExpressionError(f"Unexpected token '{tok.value}'", source=self._source, pos=tok.pos)
 
     def _field_access(self) -> FieldAccess:
         parts: list[str] = []
@@ -546,9 +550,7 @@ def _extract_matcher_name(node: object) -> str:
         return ".".join(node.parts)
     if isinstance(node, StringLiteral):
         return node.value
-    raise ExpressionError(
-        f"'matches' operator requires a matcher name, got {type(node).__name__}"
-    )
+    raise ExpressionError(f"'matches' operator requires a matcher name, got {type(node).__name__}")
 
 
 def _resolve_field(data: dict[str, object], parts: tuple[str, ...]) -> object:

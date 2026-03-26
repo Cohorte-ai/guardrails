@@ -33,7 +33,9 @@ def resolve_profile(
         _seen = set()
 
     if name in _seen:
-        raise ConfigError([f"Circular profile inheritance detected: {' -> '.join(_seen)} -> {name}"])
+        raise ConfigError(
+            [f"Circular profile inheritance detected: {' -> '.join(_seen)} -> {name}"]
+        )
 
     if name not in profiles:
         raise ConfigError([f"Profile '{name}' does not exist"])

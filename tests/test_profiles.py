@@ -22,11 +22,13 @@ class TestResolveProfile:
     def test_inheritance(self) -> None:
         profiles = {
             "default": ProfileConfig(
-                name="default", default_tier="autonomous",
+                name="default",
+                default_tier="autonomous",
                 allow=["read"],
             ),
             "sales": ProfileConfig(
-                name="sales", extends="default",
+                name="sales",
+                extends="default",
                 default_tier="autonomous",
                 allow=["draft_email"],
                 deny=["commit_pricing"],
@@ -42,7 +44,9 @@ class TestResolveProfile:
         profiles = {
             "base": ProfileConfig(name="base", allow=["action_x"]),
             "child": ProfileConfig(
-                name="child", extends="base", deny=["action_x"],
+                name="child",
+                extends="base",
+                deny=["action_x"],
             ),
         }
         resolved = resolve_profile("child", profiles)

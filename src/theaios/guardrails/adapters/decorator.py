@@ -65,11 +65,13 @@ def guard(
                 input_text = str(args[0]) if args else ""
 
                 # Evaluate input rules
-                input_decision = await engine.evaluate_async(GuardEvent(
-                    scope="input",
-                    agent=agent,
-                    data={"content": input_text},
-                ))
+                input_decision = await engine.evaluate_async(
+                    GuardEvent(
+                        scope="input",
+                        agent=agent,
+                        data={"content": input_text},
+                    )
+                )
                 _check_decision(input_decision)
 
                 # Call the function
@@ -77,11 +79,13 @@ def guard(
 
                 # Evaluate output rules
                 output_text = str(result) if result is not None else ""
-                output_decision = await engine.evaluate_async(GuardEvent(
-                    scope="output",
-                    agent=agent,
-                    data={"content": output_text},
-                ))
+                output_decision = await engine.evaluate_async(
+                    GuardEvent(
+                        scope="output",
+                        agent=agent,
+                        data={"content": output_text},
+                    )
+                )
                 _check_decision(output_decision)
 
                 # Apply redactions if needed
@@ -99,11 +103,13 @@ def guard(
                 input_text = str(args[0]) if args else ""
 
                 # Evaluate input rules
-                input_decision = engine.evaluate(GuardEvent(
-                    scope="input",
-                    agent=agent,
-                    data={"content": input_text},
-                ))
+                input_decision = engine.evaluate(
+                    GuardEvent(
+                        scope="input",
+                        agent=agent,
+                        data={"content": input_text},
+                    )
+                )
                 _check_decision(input_decision)
 
                 # Call the function
@@ -111,11 +117,13 @@ def guard(
 
                 # Evaluate output rules
                 output_text = str(result) if result is not None else ""
-                output_decision = engine.evaluate(GuardEvent(
-                    scope="output",
-                    agent=agent,
-                    data={"content": output_text},
-                ))
+                output_decision = engine.evaluate(
+                    GuardEvent(
+                        scope="output",
+                        agent=agent,
+                        data={"content": output_text},
+                    )
+                )
                 _check_decision(output_decision)
 
                 # Apply redactions if needed

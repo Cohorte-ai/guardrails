@@ -64,10 +64,12 @@ class TestValidatePolicy:
         assert any("name" in e for e in errors)
 
     def test_duplicate_rule_names(self) -> None:
-        policy = PolicyConfig(rules=[
-            RuleConfig(name="r1", scope="input", then="deny"),
-            RuleConfig(name="r1", scope="output", then="deny"),
-        ])
+        policy = PolicyConfig(
+            rules=[
+                RuleConfig(name="r1", scope="input", then="deny"),
+                RuleConfig(name="r1", scope="output", then="deny"),
+            ]
+        )
         errors = validate_policy(policy)
         assert any("duplicate" in e for e in errors)
 
@@ -82,16 +84,14 @@ class TestValidatePolicy:
         assert any("outcome" in e for e in errors)
 
     def test_invalid_severity(self) -> None:
-        policy = PolicyConfig(rules=[
-            RuleConfig(name="r1", scope="input", then="deny", severity="ultra")
-        ])
+        policy = PolicyConfig(
+            rules=[RuleConfig(name="r1", scope="input", then="deny", severity="ultra")]
+        )
         errors = validate_policy(policy)
         assert any("severity" in e for e in errors)
 
     def test_cross_agent_missing_from(self) -> None:
-        policy = PolicyConfig(rules=[
-            RuleConfig(name="r1", scope="cross_agent", then="deny")
-        ])
+        policy = PolicyConfig(rules=[RuleConfig(name="r1", scope="cross_agent", then="deny")])
         errors = validate_policy(policy)
         assert any("from" in e for e in errors)
 

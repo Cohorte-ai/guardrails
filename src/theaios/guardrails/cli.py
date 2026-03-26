@@ -59,9 +59,7 @@ def validate(config_path: str) -> None:
     n_rules = len(policy.rules)
     n_profiles = len(policy.profiles)
     n_matchers = len(policy.matchers)
-    click.echo(
-        f"Policy is valid: {n_rules} rules, {n_profiles} profiles, {n_matchers} matchers"
-    )
+    click.echo(f"Policy is valid: {n_rules} rules, {n_profiles} profiles, {n_matchers} matchers")
 
 
 # ---------------------------------------------------------------------------

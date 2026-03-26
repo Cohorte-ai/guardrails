@@ -49,11 +49,13 @@ class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc]
 
     def on_llm_start(self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any) -> None:
         for prompt in prompts:
-            decision = self._engine.evaluate(GuardEvent(
-                scope="input",
-                agent=self._agent,
-                data={"content": prompt},
-            ))
+            decision = self._engine.evaluate(
+                GuardEvent(
+                    scope="input",
+                    agent=self._agent,
+                    data={"content": prompt},
+                )
+            )
             if decision.is_denied and not decision.dry_run:
                 raise GuardDenied(decision)
             if decision.requires_approval and not decision.dry_run:
@@ -67,21 +69,25 @@ class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc]
                     if hasattr(gen, "text"):
                         text += gen.text
         if text:
-            decision = self._engine.evaluate(GuardEvent(
-                scope="output",
-                agent=self._agent,
-                data={"content": text},
-            ))
+            decision = self._engine.evaluate(
+                GuardEvent(
+                    scope="output",
+                    agent=self._agent,
+                    data={"content": text},
+                )
+            )
             if decision.is_denied and not decision.dry_run:
                 raise GuardDenied(decision)
 
     def on_tool_start(self, serialized: dict[str, Any], input_str: str, **kwargs: Any) -> None:
         tool_name = serialized.get("name", "unknown")
-        decision = self._engine.evaluate(GuardEvent(
-            scope="tool_call",
-            agent=self._agent,
-            data={"tool_name": tool_name, "arguments": {"input": input_str}},
-        ))
+        decision = self._engine.evaluate(
+            GuardEvent(
+                scope="tool_call",
+                agent=self._agent,
+                data={"tool_name": tool_name, "arguments": {"input": input_str}},
+            )
+        )
         if decision.is_denied and not decision.dry_run:
             raise GuardDenied(decision)
         if decision.requires_approval and not decision.dry_run:
