@@ -265,7 +265,13 @@ class Engine:
         redacted = content
         for pname in pattern_names:
             if pname in self._matchers:
+                # Pattern name is a matcher name — use the whole matcher
                 redacted = self._matchers[pname].redact(redacted)
+            else:
+                # Pattern name might be a sub-pattern within a matcher
+                # (e.g., "ssn" within the "pii" matcher)
+                for matcher in self._matchers.values():
+                    redacted = matcher.redact(redacted, pattern_name=pname)
 
         if redacted != content:
             return {"content": redacted}
