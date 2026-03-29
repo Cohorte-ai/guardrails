@@ -16,6 +16,10 @@ class RegexMatcher(Matcher):
     Named patterns support targeted redaction.
     """
 
+    # Maximum input length to prevent ReDoS on complex patterns.
+    # Inputs longer than this are truncated before matching.
+    _MAX_INPUT_LENGTH = 100_000
+
     def __init__(self, config: MatcherConfig) -> None:
         self._named: dict[str, re.Pattern[str]] = {}
         self._unnamed: list[re.Pattern[str]] = []
@@ -24,12 +28,26 @@ class RegexMatcher(Matcher):
 
         if isinstance(config.patterns, dict):
             for name, pattern in config.patterns.items():
-                self._named[name] = re.compile(pattern, flags)
+                try:
+                    self._named[name] = re.compile(pattern, flags)
+                except re.error as exc:
+                    raise ValueError(
+                        f"Invalid regex pattern '{name}': {exc}"
+                    ) from exc
         elif isinstance(config.patterns, list):
             for pattern in config.patterns:
-                self._unnamed.append(re.compile(pattern, flags))
+                try:
+                    self._unnamed.append(re.compile(pattern, flags))
+                except re.error as exc:
+                    raise ValueError(
+                        f"Invalid regex pattern: {exc}"
+                    ) from exc
 
     def match(self, text: str, pattern_name: str | None = None) -> bool:
+        # Limit input length to prevent ReDoS on complex patterns
+        if len(text) > self._MAX_INPUT_LENGTH:
+            text = text[: self._MAX_INPUT_LENGTH]
+
         if pattern_name and pattern_name in self._named:
             return bool(self._named[pattern_name].search(text))
 
@@ -42,6 +60,10 @@ class RegexMatcher(Matcher):
         return False
 
     def redact(self, text: str, pattern_name: str | None = None) -> str:
+        # Limit input length to prevent ReDoS on complex patterns
+        if len(text) > self._MAX_INPUT_LENGTH:
+            text = text[: self._MAX_INPUT_LENGTH]
+
         result = text
         if pattern_name and pattern_name in self._named:
             label = f"[{pattern_name.upper()}]"
