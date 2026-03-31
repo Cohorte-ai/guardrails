@@ -92,10 +92,19 @@ def inspect(config_path: str, tag: str | None) -> None:
 @main.command()
 @click.option("--config", "-c", "config_path", default="guardrails.yaml", help="Policy file path")
 @click.option("--event", "-e", "event_json", default=None, help="Event as JSON string")
-@click.option("--event-file", "-f", "event_file", default=None, type=click.Path(exists=True), help="Path to JSON file containing the event")
+@click.option(
+    "--event-file",
+    "-f",
+    "event_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to JSON file containing the event",
+)
 @click.option("--dry-run", is_flag=True, help="Evaluate without enforcement")
 @click.option("--output", "-o", type=click.Choice(["console", "json"]), default="console")
-def check(config_path: str, event_json: str | None, event_file: str | None, dry_run: bool, output: str) -> None:
+def check(
+    config_path: str, event_json: str | None, event_file: str | None, dry_run: bool, output: str
+) -> None:
     """Evaluate a single event against the policy."""
     if not event_json and not event_file:
         click.echo("Error: either --event or --event-file is required", err=True)
