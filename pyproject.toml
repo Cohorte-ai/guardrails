@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "theaios-guardrails"
-version = "0.1.2"
+version = "0.1.3"
 description = "Declarative YAML-based policy engine for AI agent guardrails"
 readme = "README.md"
 license = "Apache-2.0"
