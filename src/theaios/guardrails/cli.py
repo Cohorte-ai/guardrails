@@ -118,7 +118,7 @@ def check(
 
     try:
         if event_file:
-            with open(event_file) as f:
+            with open(event_file, encoding="utf-8-sig") as f:
                 raw = json.load(f)
         else:
             raw = json.loads(event_json)  # type: ignore[arg-type]
