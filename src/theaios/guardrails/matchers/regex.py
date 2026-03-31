@@ -31,17 +31,13 @@ class RegexMatcher(Matcher):
                 try:
                     self._named[name] = re.compile(pattern, flags)
                 except re.error as exc:
-                    raise ValueError(
-                        f"Invalid regex pattern '{name}': {exc}"
-                    ) from exc
+                    raise ValueError(f"Invalid regex pattern '{name}': {exc}") from exc
         elif isinstance(config.patterns, list):
             for pattern in config.patterns:
                 try:
                     self._unnamed.append(re.compile(pattern, flags))
                 except re.error as exc:
-                    raise ValueError(
-                        f"Invalid regex pattern: {exc}"
-                    ) from exc
+                    raise ValueError(f"Invalid regex pattern: {exc}") from exc
 
     def match(self, text: str, pattern_name: str | None = None) -> bool:
         # Limit input length to prevent ReDoS on complex patterns
