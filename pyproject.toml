@@ -30,7 +30,7 @@ dependencies = [
 trustgate = ["theaios-trustgate>=0.2"]
 langchain = ["langchain-core>=0.3"]
 all = ["theaios-guardrails[trustgate,langchain]"]
-dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.10", "types-pyyaml>=6.0", "pytest-asyncio>=1.0"]
+dev = ["pytest>=8.0,<10", "ruff>=0.15,<0.16", "mypy>=1.19,<1.20", "types-pyyaml>=6.0", "pytest-asyncio>=1.0,<2"]
 
 [project.scripts]
 guardrails = "theaios.guardrails.cli:main"
