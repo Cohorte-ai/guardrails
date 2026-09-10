@@ -5,6 +5,34 @@ All notable changes to theaios-guardrails will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-09-10
+
+### Added
+
+- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`
+
+### Changed
+
+- CI toolchain pinned to verified versions (ruff 0.15.x, mypy 1.19.x, pytest <10)
+
+> The entries below for 0.1.2–0.1.3 were reconstructed on 2026-09-10 from the commit history.
+
+## [0.1.3] - 2026-03-31
+
+### Fixed
+
+- Windows BOM issue in `--event-file`; Windows examples updated for PowerShell and CMD
+
+## [0.1.2] - 2026-03-31
+
+### Added
+
+- `--event-file` option for Windows CMD compatibility
+
+### Changed
+
+- Publish workflow uses a PyPI API token instead of trusted publishing
+
 ## [0.1.1] - 2026-03-29
 
 ### Security
