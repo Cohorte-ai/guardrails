@@ -194,9 +194,12 @@ def test_execute_runs_only_the_approved_tool_with_the_approved_args(tmp_path: Pa
     with pytest.raises(ProposalError, match="'send_email', which is not in the tools"):
         g.execute(pid, {"wire_money": lambda **kw: wired.append(kw)})
     assert wired == []
-    proposal = g.proposal(pid)
-    assert proposal is not None
-    proposal.args["to"] = "attacker@evil.test"  # tampering with the stored proposal
+    copy = g.proposal(pid)
+    assert copy is not None
+    copy.args["to"] = "attacker@evil.test"  # a copy: changing it changes nothing
+    stored = g.store.get_proposal(pid)
+    assert stored is not None and stored.args["to"] != "attacker@evil.test"
+    stored.args["to"] = "attacker@evil.test"  # tampering with the store itself
     with pytest.raises(ProposalError, match="stored arguments were altered"):
         g.execute(pid, {"send_email": lambda **kw: None})
 

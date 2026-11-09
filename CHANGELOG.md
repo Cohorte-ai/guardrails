@@ -12,9 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Flow control** (`theaios.guardrails.flow`): tools declare their effect (`read`, `write`, `send`) and what their results carry (`untrusted`, `sensitive`) in a new `tools:` section. Once a session has read untrusted content, writes and sends need a person's approval; once it has read sensitive data, sends do. `FlowGuard.admit` decides at dispatch; `observe` records what each call returned; `call` and the `tool` decorator do both.
 - **Proposals**: a blocked call becomes a proposal frozen to a SHA-256 digest of the tool and its arguments. A person decides it once (`decide`); `execute` runs it at most once and only with the proposed arguments.
 - **Typed denials**: every non-allow decision carries codes (`untrusted_to_send`, `sensitive_to_send`, `rule_deny`, ...), a message and the tool calls that caused it.
-- **Durable, tamper-evident state**: `FileStore` keeps labels, proposals and decisions in a hash-chained log, reloaded on restart and verifiable with `python -m theaios.core.audit verify`.
+- **Durable state**: `FileStore` keeps labels, proposals and decisions in a hash-chained log with a truncation anchor, reloaded on restart and checked with `guardrails flow-verify` (not `python -m theaios.core.audit verify`, which cannot see deleted last lines). It catches crashes, truncation, edits and a second writer; it does not stop someone with write access to the state directory, which the docs say plainly.
 - **Grounded numbers** (`theaios.guardrails.grounding.check_numbers`): flags figures in a generated text that no source contains, allowing for rounding, units and percentages.
-- `examples/flow-control`: an inbox assistant with prompt injections, measured with TrustGate. With gpt-4.1-mini over 42 attack runs: 65 emails to attacker addresses and 30 bank-detail tickets executed unguarded, none with flow control; legitimate sends after reading mail wait for approval.
+- `examples/flow-control`: an inbox assistant with prompt injections, measured with TrustGate. With gpt-4.1-mini over 42 attack runs, in two independent runs: 65 and 64 emails to attacker addresses and 30 and 29 bank-detail tickets executed unguarded, none with flow control; legitimate sends after reading mail wait for approval.
 - `guardrails flow-verify PATH`: checks a flow-state file's hash chain and truncation anchor, with what happened and what to do.
 - `guardrails validate` counts tools; `guardrails inspect` shows tools and flow settings.
 - Docs: flow control guide (including who may decide, clear and execute, and how to run an agent with an approval UI); `tools:` and `flow:` in the policy reference; matchers documented as detectors, not the security boundary against prompt injection.
@@ -34,7 +34,15 @@ The pre-release usability test (three simulated users, one acting as a red team)
 - State files are created private (0600): they hold proposal arguments.
 - Identical retries while a proposal is pending reuse it instead of queueing a duplicate that could be approved twice.
 - Duplicate keys in a policy file are rejected (a merge conflict could turn a `send` into a `read`).
-- `check_numbers` reads European formats and skips dates in every common format (it used to flag "14 March 2026" and read "Margin 41" as a date).
+- `check_numbers` reads European formats and skips dates in common formats (it used to flag "14 March 2026"); a figure after a month name ("In March 9,999,000 units") is still checked.
+
+A second, independent re-verification then found more, also fixed with tests:
+
+- A pending proposal stayed open when the same call was proposed again for new reasons, so one call could be approved and run twice; the old proposal is now `superseded`.
+- The store lock keyed on the path, so a hard link opened a second store; it now locks the log file itself.
+- Entries appended outside the store were accepted; at most one entry past the anchor (a crash) is now tolerated.
+- A function decorated with `@guard.tool` in the `execute` registry admitted itself again and never ran; `execute` now runs the original. The decorator refuses `*args`/`**kwargs` tools, whose calls could not be replayed exactly.
+- Non-string keys in arguments (`{1: "x"}`) were silently turned into strings; they are refused. An existing state file is tightened to 0600. `pending`, `proposal` and `decide` return copies.
 
 ### Changed
 

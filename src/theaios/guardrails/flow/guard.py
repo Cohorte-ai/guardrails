@@ -10,6 +10,7 @@ which code then executes exactly as proposed; the session stays tainted.
 
 from __future__ import annotations
 
+import copy
 import fnmatch
 import functools
 import hashlib
@@ -52,6 +53,9 @@ def args_digest(tool: str, args: Mapping[str, object]) -> str:
     """SHA-256 of the tool name and arguments in canonical JSON. Arguments must be JSON
     (strings, numbers, booleans, null, lists, string-keyed objects); anything else raises
     ``ValueError``, because its contents could change without changing the digest."""
+    if not isinstance(args, Mapping):
+        raise ValueError(f"arguments of '{tool}' must be a mapping of parameter names to values")
+    _check_keys(tool, args)
     try:
         canonical = json.dumps(
             {"tool": tool, "args": dict(args)},
@@ -60,7 +64,7 @@ def args_digest(tool: str, args: Mapping[str, object]) -> str:
             ensure_ascii=False,
             allow_nan=False,
         )
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise ValueError(
             f"arguments of '{tool}' must be plain JSON values (got {exc}); convert objects "
             "to dicts or strings before admitting the call"
@@ -72,6 +76,23 @@ def args_digest(tool: str, args: Mapping[str, object]) -> str:
             "(pass a reference, such as a file id, instead of the content)"
         )
     return hashlib.sha256(data).hexdigest()
+
+
+def _check_keys(tool: str, value: object, depth: int = 0) -> None:
+    """Objects must have string keys: JSON would silently turn 1 and True into "1" and "true",
+    so two different calls could share a digest."""
+    if depth > 100:
+        raise ValueError(f"arguments of '{tool}' are nested more than 100 levels deep")
+    if isinstance(value, Mapping):
+        for k, v in value.items():
+            if not isinstance(k, str):
+                raise ValueError(
+                    f"arguments of '{tool}' must be plain JSON values: key {k!r} is not a string"
+                )
+            _check_keys(tool, v, depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _check_keys(tool, v, depth + 1)
 
 
 class FlowGuard:
@@ -261,6 +282,13 @@ class FlowGuard:
                         existing,
                         labels=labels,
                     )
+            # An older pending proposal for the same call states outdated reasons: retire it,
+            # so the same call cannot be approved and run twice.
+            for existing in self._store.proposals(session_id):
+                if existing.digest == digest and existing.status == "pending":
+                    existing.status = "superseded"
+                    existing.note = "superseded: the reasons changed"
+                    self._store.update_proposal(existing)
             return self._new_proposal(
                 session_id, tool, args, digest, reasons, tier, spec.effect, labels
             )
@@ -332,11 +360,15 @@ class FlowGuard:
     # Proposals -------------------------------------------------------------------------
 
     def proposal(self, proposal_id: str) -> Proposal | None:
-        """A proposal by id, whatever its status."""
-        return self._store.get_proposal(proposal_id)
+        """A copy of a proposal by id, whatever its status."""
+        p = self._store.get_proposal(proposal_id)
+        return copy.deepcopy(p) if p is not None else None
 
     def pending(self, session_id: str | None = None) -> list[Proposal]:
-        return [p for p in self._store.proposals(session_id) if p.status == "pending"]
+        """Copies of the proposals waiting for a decision."""
+        return [
+            copy.deepcopy(p) for p in self._store.proposals(session_id) if p.status == "pending"
+        ]
 
     def decide(self, proposal_id: str, *, approve: bool, by: str, note: str = "") -> Proposal:
         """A person approves or rejects a proposal. Once: a decided proposal cannot be
@@ -352,12 +384,17 @@ class FlowGuard:
             p.status = "approved" if approve else "rejected"
             p.decided_by, p.decided_at, p.note = by, time.time(), note
             self._store.update_proposal(p)
-            return p
+            return copy.deepcopy(p)
 
     def execute(self, proposal_id: str, tools: Mapping[str, Callable[..., T]]) -> T:
         """Run an approved proposal: the function registered under the approved tool name in
         ``tools``, called with exactly the proposed arguments, at most once. The call is
         observed into the session like any other, even if it raises."""
+        if not isinstance(tools, Mapping):
+            raise TypeError(
+                "execute() takes a mapping of tool names to functions, e.g. "
+                "{'send_email': send_email}, so only the approved tool can run"
+            )
         with self._store.lock:
             p = self._store.get_proposal(proposal_id)
             if p is None:
@@ -365,6 +402,8 @@ class FlowGuard:
             if p.status != "approved":
                 raise ProposalError(f"proposal {proposal_id} is {p.status}, not approved")
             fn = tools.get(p.tool)
+            # A function decorated with @guard.tool would admit itself again: run the original.
+            fn = getattr(fn, "_flow_original", fn)
             if fn is None:
                 raise ProposalError(
                     f"proposal {proposal_id} is for '{p.tool}', which is not in the tools "
@@ -413,12 +452,24 @@ class FlowGuard:
         def wrap(fn: Callable[..., T]) -> Callable[..., T]:
             tool_name = name or fn.__name__
             signature = inspect.signature(fn)
+            variadic = [
+                p.name
+                for p in signature.parameters.values()
+                if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+            ]
+            if variadic:
+                raise TypeError(
+                    f"@guard.tool needs named parameters: '{tool_name}' takes "
+                    f"{', '.join('*' + v for v in variadic)}, which an approved call could not "
+                    "replay exactly"
+                )
 
             @functools.wraps(fn)
             def wrapper(*a: Any, **kw: Any) -> T:
                 bound = signature.bind(*a, **kw)
                 return self.call(session(), tool_name, fn, dict(bound.arguments), agent=agent)
 
+            wrapper._flow_original = fn  # type: ignore[attr-defined]
             return wrapper
 
         return wrap

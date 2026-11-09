@@ -269,3 +269,103 @@ def test_validate_counts_tools(policy_path: Path) -> None:
     assert result.exit_code == 0 and "6 tools" in result.output
     shown = CliRunner().invoke(cli, ["inspect", "--config", str(policy_path)])
     assert "crm_send*" in shown.output and "on_block=require_approval" in shown.output
+
+
+# --- Re-verification findings ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("claim", "source"),
+    [
+        ("In March 9,999,000 units shipped.", "In March 999,000 units shipped."),
+        ("Sales in May 12,500,000 EUR", "500,000 EUR"),
+        ("In March 2,500 units", "500 units"),
+        ("Revenue in March 1.5M", "0.5M"),
+    ],
+)
+def test_a_figure_after_a_month_is_still_checked(claim: str, source: str) -> None:
+    from theaios.guardrails.grounding import check_numbers
+
+    report = check_numbers(claim, source)
+    assert not report.ok, report.summary()
+
+
+def test_entries_appended_outside_the_store_are_refused(tmp_path: Path, policy_path: Path) -> None:
+    path = tmp_path / "state.jsonl"
+    _approved_and_executed(path, policy_path)
+    head = path.with_name(path.name + ".head")
+    saved_head = head.read_text()
+    with FileStore(path) as store:  # a second writer appends two entries...
+        g = FlowGuard(load_policy(str(policy_path)), store=store)
+        g.clear("s", by="mallory", reason="x")
+        g.clear("s", by="mallory", reason="y")
+    head.write_text(saved_head)  # ...and puts the old anchor back
+    ok, message = check_store(path)
+    assert not ok and "appended outside the store" in message
+
+
+def test_a_hard_link_cannot_open_a_second_store(tmp_path: Path) -> None:
+    path = tmp_path / "state.jsonl"
+    with FileStore(path):
+        alias = tmp_path / "alias.jsonl"
+        os.link(path, alias)
+        os.link(path.with_name(path.name + ".head"), alias.with_name(alias.name + ".head"))
+        with pytest.raises(StoreInUse):
+            FileStore(alias)
+
+
+def test_a_superseded_proposal_cannot_also_run(guard: FlowGuard) -> None:
+    guard.observe("s", "fetch_url")
+    old = guard.admit("s", "post_slack", {"channel": "#team"}).proposal
+    guard.observe("s", "read_notes")  # new reasons
+    new = guard.admit("s", "post_slack", {"channel": "#team"}).proposal
+    assert old is not None and new is not None and old.id != new.id
+    stale = guard.proposal(old.id)
+    assert stale is not None and stale.status == "superseded"
+    assert [p.id for p in guard.pending("s")] == [new.id]
+
+
+def test_a_decorated_tool_works_in_the_execute_registry(guard: FlowGuard) -> None:
+    sent: list[str] = []
+
+    @guard.tool("post_slack", session=lambda: "s")
+    def post(channel: str) -> str:
+        sent.append(channel)
+        return channel
+
+    guard.observe("s", "fetch_url")
+    with pytest.raises(FlowBlocked) as exc:
+        post("#team")
+    proposal = exc.value.admission.proposal
+    assert proposal is not None
+    guard.decide(proposal.id, approve=True, by="lea")
+    assert guard.execute(proposal.id, {"post_slack": post}) == "#team"
+    assert sent == ["#team"] and guard.pending("s") == []
+
+
+def test_variadic_tools_are_refused_by_the_decorator(guard: FlowGuard) -> None:
+    with pytest.raises(TypeError, match="needs named parameters"):
+
+        @guard.tool("post_slack", session=lambda: "s")
+        def send(to: str, *cc: str, **headers: str) -> None: ...
+
+
+def test_strict_arguments_and_registry(guard: FlowGuard) -> None:
+    for bad in ({1: "x"}, {"a": {True: "x"}}):
+        with pytest.raises(ValueError, match="is not a string"):
+            guard.admit("s", "post_slack", bad)  # type: ignore[arg-type]
+    guard.observe("s", "fetch_url")
+    p = guard.admit("s", "post_slack", {"channel": "#team"}).proposal
+    assert p is not None
+    guard.decide(p.id, approve=True, by="lea")
+    with pytest.raises(TypeError, match="mapping of tool names"):
+        guard.execute(p.id, lambda **kw: None)  # type: ignore[arg-type]
+
+
+def test_an_existing_state_file_is_made_private(tmp_path: Path) -> None:
+    path = tmp_path / "state.jsonl"
+    path.touch(mode=0o644)
+    os.chmod(path, 0o644)
+    with FileStore(path):
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert not path.with_name(path.name + ".lock").exists()

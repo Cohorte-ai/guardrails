@@ -19,8 +19,9 @@ The labels come from your declarations of what each tool returns, not from readi
 content. A prompt injection cannot talk its way past them, because nothing inspects what it
 says.
 
-Measured on an inbox assistant with gpt-4.1-mini: unguarded, 65 emails to attacker addresses
-and 30 bank-detail tickets across 42 attack runs; with flow control, none executed. See
+Measured on an inbox assistant with gpt-4.1-mini, twice: unguarded, 65 and 64 emails to
+attacker addresses and 30 and 29 bank-detail tickets across 42 attack runs; with flow control,
+none executed. See
 [examples/flow-control](https://github.com/Cohorte-ai/guardrails/tree/main/examples/flow-control).
 
 ---
@@ -113,8 +114,8 @@ def send(to: str, body: str) -> str: ...
 Arguments are passed as a dict, never mixed with the guard's own parameters: a model that puts
 `"agent": "admin"` in its tool arguments cannot change the identity your profiles check.
 Arguments must be plain JSON (strings, numbers, booleans, null, lists, objects with string
-keys) and at most 1 MB; anything else raises `ValueError`, because the approval digest must
-cover every byte.
+keys, at most 100 levels deep) and at most 1 MB; anything else raises `ValueError`, because the
+approval digest must cover every byte.
 
 `observe` must be called after every tool call that ran, **including one that raised**: an
 error message can carry the injected content. `call`, the decorator and `execute` do it for
@@ -176,7 +177,13 @@ guard.proposal(p.id)         # any proposal by id, whatever its status
   retry needs a new approval.
 - If the model asks again for the same call, for the same reasons, while it is pending, `admit`
   returns the existing proposal instead of queueing a duplicate. If the reasons changed (the
-  session read something since), a new proposal states them.
+  session read something since), a new proposal states them and the old one becomes
+  `superseded`, so the same call cannot be approved twice. `clear` leaves pending proposals
+  pending: a person still decides them.
+- `pending`, `proposal` and `decide` return copies; changing them changes nothing.
+- Functions decorated with `@guard.tool` can go in the registry: `execute` runs the original
+  function, without admitting it again. The decorator refuses functions with `*args` or
+  `**kwargs`, whose calls could not be replayed exactly as approved.
 - Approval covers that one call. The session stays tainted: the next send needs its own
   approval. To start a fresh task, `guard.clear(session_id, by="lea", reason="new task")`.
 
@@ -203,18 +210,22 @@ from a history that was edited, truncated or emptied. Check a file from the comm
 guardrails flow-verify .guardrails_flow/state.jsonl   # exit 0 intact, 1 otherwise
 ```
 
-- **One store per file.** `FileStore` holds a lock (`state.jsonl.lock`) while open; a second
-  open, in this process or another, raises `StoreInUse`. Close it (`store.close()` or
-  `with FileStore(...) as store:`) to release it.
+- **One store per file.** `FileStore` holds an exclusive lock on the log while open; a second
+  open, in this process or another, under any path or hard link, raises `StoreInUse`. Close it
+  (`store.close()` or `with FileStore(...) as store:`) to release it.
 - **Private.** The files are created readable by their owner only (0600): they hold the
   arguments of proposed calls. Back them up and delete them like any data they contain.
 - **Recovery.** The error says what happened. An interrupted write (crash) leaves an incomplete
   last line: remove only that line. Anything else (edited, deleted or reordered entries, a
   missing file or anchor) means the history cannot be trusted: restore both files from backup.
   Starting a new file drops every label and pending proposal; do it knowingly.
-- **Limits.** This detects edits and truncation; it does not stop someone who can rewrite both
-  the log and its anchor. Protect the directory with file permissions, and copy the anchor
-  elsewhere if you need more.
+- **Limits.** This protects against accidents and naive tampering: a crash mid-write (at most
+  one entry past the anchor is accepted), deleted last lines, an emptied file, edits, reordering,
+  two writers. It does **not** stop someone who can write the directory: the chain uses no
+  secret, so they can append valid entries and update the anchor, restore an older pair of
+  files (re-arming an approval that already ran), or delete both files (a fresh, empty store).
+  Write access to the state directory is control of the guard: protect it with file permissions
+  and back it up.
 
 ---
 
@@ -270,7 +281,8 @@ if not report.ok:
 too ("9.999.000", "9 999 000", "12,34%"). Whole numbers up to 10 ("3 steps") are skipped by
 default (`ignore_small=-1` checks them).
 
-Not checked: **dates** in any common format ("2026-11-09", "11/09/2026", "14 March 2026"),
+Not checked: **dates** in common formats ("2026-11-09", "11/09/2026", "14 March 2026",
+"March 15, 2026"; month names in English only, so "14 mars 2026" is read as figures),
 **identifiers** glued to letters (`gpt-4.1`, `Q3`), and **currencies** ("$3,215,000" is grounded
 by "3,215,000 EUR": check currencies with a text rule). A figure written at low precision
 matches more ("3M" is grounded by anything from 2.5M to 3.5M). An ungrounded figure is not

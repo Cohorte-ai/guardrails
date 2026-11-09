@@ -7,8 +7,13 @@ hash-chained JSONL file (theaios-core), so state survives a restart and edits ar
 A hash chain alone cannot see its own end being cut off: deleting the last lines leaves a
 valid, shorter chain. The file store therefore keeps an anchor next to the log
 (``<file>.head``: the number of entries and the last hash), rewritten after every append, and
-checks it on open. It also holds an exclusive lock (``<file>.lock``) while open, so two stores
-cannot write the same history.
+checks it on open. It also holds an exclusive lock on the log while open, so two stores cannot
+write the same history (even through a hard link).
+
+What this protects against: accidents (a crash mid-write, truncation, a careless edit, two
+processes on one file) and naive tampering. It does not stop someone who can write the
+directory: the chain has no secret, so they can append valid entries, restore an older
+log-and-anchor pair, or delete both files. Protect the directory with file permissions.
 """
 
 from __future__ import annotations
@@ -112,10 +117,6 @@ def _head_path(path: Path) -> Path:
     return path.with_name(path.name + ".head")
 
 
-def _lock_path(path: Path) -> Path:
-    return path.with_name(path.name + ".lock")
-
-
 def _entries(path: Path) -> Iterator[dict[str, Any]]:
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -152,6 +153,13 @@ def check_store(path: str | Path) -> tuple[bool, str]:
         lines = p.read_text(encoding="utf-8").splitlines()
         content = [line for line in lines if line.strip()]
         last_torn = bool(content) and count == len(content) - 1 and not _is_json(content[-1])
+        expected = _anchored_entries(head_p)
+        if last_torn and expected is not None and expected > count + 1:
+            return False, (
+                f"{p}: {count} complete entries and an incomplete last line, but the anchor "
+                f"records {expected}: entries were deleted as well. Do not resume from this "
+                "file: restore it from backup."
+            )
         if last_torn:
             return False, (
                 f"{p}: the last line is incomplete (a write was interrupted, for example by a "
@@ -189,11 +197,23 @@ def check_store(path: str | Path) -> tuple[bool, str]:
                 "was rewritten. Restore it from backup and investigate."
             )
     extra = count - expected
-    note = f" ({extra} entries written after the last anchor update)" if extra else ""
-    return True, f"{p}: intact, {count} entries{note}"
+    if extra > 1:
+        return False, (
+            f"{p}: {extra} entries after the last anchor update; a crash can leave at most one. "
+            "Entries were appended outside the store: do not resume, investigate."
+        )
+    note = " (1 entry written after the last anchor update: a crash before it was recorded)"
+    return True, f"{p}: intact, {count} entries{note if extra else ''}"
 
 
-_OPEN: set[str] = set()
+def _anchored_entries(head_p: Path) -> int | None:
+    try:
+        return int(json.loads(head_p.read_text(encoding="utf-8"))["entries"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+_OPEN: set[tuple[int, int]] = set()  # (device, inode) of logs open in this process
 
 
 class FileStore(MemoryStore):
@@ -210,14 +230,17 @@ class FileStore(MemoryStore):
         p.parent.mkdir(parents=True, exist_ok=True)
         self._path = p
         self._lock_file: IO[str] | None = None
+        self._key: tuple[int, int] | None = None
+        existed = p.exists() or _head_path(p).exists()
+        if not p.exists() and _head_path(p).exists():
+            raise StoreCorrupted(check_store(p)[1])
+        _create_private(p)  # also tightens an existing file to 0600
         self._acquire_lock()
         try:
-            if p.exists() or _head_path(p).exists():
+            if existed:
                 ok, message = check_store(p)
                 if not ok:
                     raise StoreCorrupted(message)
-            else:
-                _create_private(p)
             self._log = JsonlLog(p, chain=True)
             self._count = 0
             self._last_hash = ""
@@ -251,14 +274,15 @@ class FileStore(MemoryStore):
     def close(self) -> None:
         f, self._lock_file = getattr(self, "_lock_file", None), None
         if f is not None:
-            _OPEN.discard(str(self._path.resolve()))
+            _OPEN.discard(getattr(self, "_key", None))  # type: ignore[arg-type]
             f.close()
 
     def _acquire_lock(self) -> None:
-        key = str(self._path.resolve())
+        st = os.stat(self._path)
+        key = (st.st_dev, st.st_ino)  # the same file under any path or hard link
         if key in _OPEN:
             raise StoreInUse(f"{self._path} is already open in this process; close it first")
-        f = open(_lock_path(self._path), "a", encoding="utf-8")  # noqa: SIM115 - held while open
+        f = open(self._path, "a", encoding="utf-8")  # noqa: SIM115 - held while open
         if fcntl is not None:
             try:
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -266,6 +290,7 @@ class FileStore(MemoryStore):
                 f.close()
                 raise StoreInUse(f"{self._path} is open in another process") from None
         _OPEN.add(key)
+        self._key = key
         self._lock_file = f
 
     def _record(self, event: dict[str, object]) -> None:

