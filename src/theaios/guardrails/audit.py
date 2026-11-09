@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+from theaios.core.audit import JsonlLog
 
 from theaios.guardrails.types import Decision, GuardEvent, PolicyConfig
 
@@ -19,7 +20,7 @@ class AuditLog:
 
     def __init__(self, path: str = ".guardrails_audit/audit.jsonl") -> None:
         self._path = Path(path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._log = JsonlLog(self._path)
 
     @property
     def path(self) -> Path:
@@ -52,8 +53,7 @@ class AuditLog:
             entry["policy_name"] = policy.metadata.name
             entry["policy_version"] = policy.version
 
-        with open(self._path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
+        self._log.append(entry)
 
     def read(
         self,
@@ -65,36 +65,20 @@ class AuditLog:
         limit: int = 1000,
     ) -> list[dict[str, object]]:
         """Read audit log entries with optional filters."""
-        if not self._path.exists():
-            return []
 
-        entries: list[dict[str, object]] = []
-        with open(self._path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+        def keep(entry: dict[str, object]) -> bool:
+            if since and str(entry.get("timestamp", "")) < since:
+                return False
+            if agent and entry.get("agent") != agent:
+                return False
+            if outcome and entry.get("outcome") != outcome:
+                return False
+            if rule and entry.get("rule") != rule:
+                return False
+            return True
 
-                if since and entry.get("timestamp", "") < since:
-                    continue
-                if agent and entry.get("agent") != agent:
-                    continue
-                if outcome and entry.get("outcome") != outcome:
-                    continue
-                if rule and entry.get("rule") != rule:
-                    continue
-
-                entries.append(entry)
-                if len(entries) >= limit:
-                    break
-
-        return entries
+        return self._log.read(keep, limit=limit)
 
     def clear(self) -> None:
         """Clear all audit log entries."""
-        if self._path.exists():
-            self._path.unlink()
+        self._log.clear()
