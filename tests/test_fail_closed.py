@@ -12,7 +12,6 @@ import pytest
 
 from theaios.guardrails.config import ConfigError, load_policy, validate_policy
 from theaios.guardrails.engine import Engine
-from theaios.guardrails.expressions import ExpressionError
 from theaios.guardrails.types import GuardEvent, MatcherConfig, PolicyConfig, RuleConfig
 
 TYPO_POLICY = """
@@ -61,7 +60,7 @@ def test_load_policy_rejects_undefined_matcher_and_variable(tmp_path: Path) -> N
 
 def test_engine_built_in_code_rejects_undefined_reference() -> None:
     policy = _policy(RuleConfig(name="r", scope="action", when="amount > $max_amout", then="deny"))
-    with pytest.raises(ExpressionError, match=r"Error in rule 'r'.*\$max_amout"):
+    with pytest.raises(ConfigError, match=r"rules\[0\] \(r\).*\$max_amout"):
         Engine(policy)
 
 

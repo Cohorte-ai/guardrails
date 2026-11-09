@@ -61,6 +61,13 @@ when: "approval_id == null"
 | `>=` | Greater than or equal | `retries >= 3` |
 | `<=` | Less than or equal | `confidence <= 0.8` |
 
+`>`, `<`, `>=` and `<=` compare numbers as numbers, including strings that spell a number
+(tool-call arguments often arrive as strings): `"10000" > 5000` is true. Comparing a number with
+something that is not one (`"10,000"`, `"abc"`, a list) is an evaluation error, and a rule that
+cannot be evaluated is treated as matched: a deny rule denies. A missing field is null, and
+`null > 5000` is false, so a cap on a field the event may omit needs its own rule (for example
+`action == "transfer" and amount == null`).
+
 ### String
 
 | Operator | Meaning | Example |
@@ -130,7 +137,7 @@ rules:
   - when: "dept in $sensitive_domains"           # list variable
 ```
 
-Variables are prefixed with `$`. If a variable doesn't exist, the engine raises an error at evaluation time — this is intentional, to catch typos.
+Variables are prefixed with `$`. A condition that uses an undefined variable (or matcher) is rejected when the policy loads, with a suggestion when a close name exists, so a typo cannot silently turn a rule off.
 
 ### Literals
 
@@ -156,7 +163,7 @@ From lowest to highest:
 Use parentheses to override precedence:
 
 ```yaml
-# Without parentheses: "a and (b or c)" — and binds tighter than or
+# Without parentheses: "(a and b) or c" — and binds tighter than or, so any legal resource matches
 when: "action == 'write' and resource == 'finance' or resource == 'legal'"
 
 # With parentheses: "(a) and (b or c)" — explicit grouping

@@ -240,6 +240,10 @@ references an undefined one (usually a typo, such as `$max_amout` or `prompt_inj
 rejected when it loads, by `load_policy`, `Engine(...)` and `guardrails validate`, with a
 suggestion when a close name exists. Disabled rules are not checked.
 
+The structure is checked too: an unknown key (a typo such as `rule:`, `condition:` or
+`enabeld:`), a section of the wrong type (`rules` must be a list), a `when` that is not a string,
+or `enabled` in quotes is an error, never silently ignored.
+
 ---
 
 ## Rule Types — Detailed Examples

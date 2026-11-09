@@ -16,7 +16,7 @@ from theaios.guardrails.expressions import (
     compile_expression,
     evaluate as eval_expr,
 )
-from theaios.guardrails.config import rule_reference_errors
+from theaios.guardrails.config import ConfigError, redact_patterns, validate_policy
 from theaios.guardrails.matchers import Matcher, get_matcher
 from theaios.guardrails.profiles import ResolvedProfile, check_profile_permission, resolve_profile
 from theaios.guardrails.rate_limit import RateLimiter
@@ -56,10 +56,12 @@ class Engine:
                 raise ExpressionError(
                     f"Error in rule '{rule.name}': {e}",
                 ) from e
-            problems = rule_reference_errors(rule, policy)
-            if problems:
-                raise ExpressionError(f"Error in rule '{rule.name}': {'; '.join(problems)}")
             self._compiled_rules.append((rule, ast))
+
+        # Same checks as load_policy, so a policy built in code cannot skip them.
+        errors = validate_policy(policy)
+        if errors:
+            raise ConfigError(errors)
 
         # Sort by severity (critical first), preserving declaration order within same severity
         self._compiled_rules.sort(key=lambda pair: SEVERITY_ORDER.get(pair[0].severity, 99))
@@ -205,7 +207,7 @@ class Engine:
                         reason=_reason(rule.reason, eval_error),
                         severity=rule.severity,
                         dry_run=self._dry_run,
-                        metadata={"patterns": rule.patterns},
+                        metadata={"patterns": redact_patterns(rule)},
                     )
                 )
 
