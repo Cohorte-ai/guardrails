@@ -3,8 +3,14 @@
 See docs/flow-control.md.
 """
 
-from theaios.guardrails.flow.guard import FlowGuard, args_digest
-from theaios.guardrails.flow.store import FileStore, MemoryStore, StoreCorrupted
+from theaios.guardrails.flow.guard import MAX_ARGS_BYTES, FlowGuard, args_digest
+from theaios.guardrails.flow.store import (
+    FileStore,
+    MemoryStore,
+    StoreCorrupted,
+    StoreInUse,
+    check_store,
+)
 from theaios.guardrails.flow.types import (
     Admission,
     Code,
@@ -21,6 +27,7 @@ from theaios.guardrails.flow.types import (
 )
 
 __all__ = [
+    "MAX_ARGS_BYTES",
     "Admission",
     "Code",
     "Denial",
@@ -34,6 +41,8 @@ __all__ = [
     "Proposal",
     "ProposalError",
     "StoreCorrupted",
+    "StoreInUse",
+    "check_store",
     "Provenance",
     "ToolSpec",
     "Verdict",

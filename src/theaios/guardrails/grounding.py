@@ -26,14 +26,31 @@ _SCALE = {
     "billion": 1e9,
 }
 
+_MONTH = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?"
+    r"|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b\.?"
+)
+_DAY = r"(?:3[01]|[12]\d|0?[1-9])(?:st|nd|rd|th)?\b"
+# Dates are not figures: they are removed before extraction, in every common format.
+_DATES = re.compile(
+    r"\b\d{4}-\d{1,2}-\d{1,2}\b"  # 2026-11-09
+    r"|\b\d{1,2}[/.]\d{1,2}[/.]\d{2,4}\b"  # 11/09/2026, 09.11.2026
+    rf"|\b{_DAY}\s+{_MONTH}(?:,?\s+\d{{4}}\b)?"  # 14 March 2026
+    rf"|\b{_MONTH}\s+{_DAY}(?:,?\s+\d{{4}}\b)?",  # March 15, 2026
+    re.IGNORECASE,
+)
+
 # A number not glued to an identifier ("gpt-4.1", "Q3", "v2") or inside a date or range
 # ("2026-11-09" yields 2026 only), with optional thousands separators, decimals, a percent
 # sign or a magnitude word.
 _NUMBER = re.compile(
     r"(?<![\w.\-/:])"
     r"(?P<sign>-)?"
-    r"(?P<int>\d{1,3}(?:,\d{3})+|\d+)"
-    r"(?P<dec>\.\d+)?"
+    r"(?P<int>\d{1,3}(?:,\d{3})+"  # 1,234,567
+    r"|\d{1,3}(?:\.\d{3}){2,}"  # 9.999.000 (two groups or more: 1.234 stays a decimal)
+    r"|\d{1,3}(?:[ \u00a0\u202f]\d{3}){2,}"  # 9 999 000
+    r"|\d+)"
+    r"(?P<dec>\.\d+|,\d{1,2}(?!\d))?"  # 12.34 or 12,34 (decimal comma)
     r"(?:\s?(?P<unit>%|k|K|M|bn|B|thousand|million|billion)\b|(?P<pct>%))?"
     r"(?![\w]|\.\d)"
 )
@@ -74,8 +91,13 @@ class GroundingReport:
         return not self.ungrounded
 
     def summary(self) -> str:
+        if not self.findings:
+            return "no figures to check"
         if self.ok:
-            return f"all {len(self.findings)} figures are grounded in the sources"
+            n = len(self.findings)
+            return (
+                f"{'the figure is' if n == 1 else f'all {n} figures are'} grounded in the sources"
+            )
         bad = ", ".join(f.figure.text for f in self.ungrounded)
         return f"{len(self.ungrounded)} of {len(self.findings)} figures not found in sources: {bad}"
 
@@ -83,9 +105,11 @@ class GroundingReport:
 def extract_figures(text: str) -> list[Figure]:
     """The numbers in a text, as written."""
     out: list[Figure] = []
+    text = _DATES.sub(lambda m: " " * len(m.group(0)), text)
     for m in _NUMBER.finditer(text):
-        digits = m.group("int").replace(",", "")
-        dec = m.group("dec") or ""
+        raw_int = m.group("int")
+        digits = re.sub(r"[,. \u00a0\u202f]", "", raw_int)
+        dec = (m.group("dec") or "").replace(",", ".")
         unit = m.group("unit") or m.group("pct")
         mantissa = float(digits + dec)
         if m.group("sign"):

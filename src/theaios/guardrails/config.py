@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Iterable
-from typing import cast
+from typing import Any, cast
 from pathlib import Path
 
 import yaml
@@ -38,6 +38,33 @@ class ConfigError(Exception):
         super().__init__("Invalid policy:\n  " + "\n  ".join(errors))
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader that refuses duplicate keys. YAML keeps the last one silently, so a merge
+    conflict could turn ``send_email: {effect: send}`` into a read."""
+
+
+def _construct_unique_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict[Any, Any]:
+    loader.flatten_mapping(node)
+    seen: dict[Any, int] = {}
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=True)  # type: ignore[no-untyped-call]
+        if key in seen:
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"duplicate key '{key}' (first at line {seen[key] + 1}); YAML would keep only "
+                "the last one",
+                key_node.start_mark,
+            )
+        seen[key] = key_node.start_mark.line
+    return dict(loader.construct_pairs(node, deep=True))  # type: ignore[no-untyped-call]
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
 def load_policy(path: str = "guardrails.yaml") -> PolicyConfig:
     """Load a YAML policy file, validate, and return typed config."""
     config_path = Path(path)
@@ -48,7 +75,7 @@ def load_policy(path: str = "guardrails.yaml") -> PolicyConfig:
         raise ConfigError([f"{path} is not a file"])
     try:
         with open(config_path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
+            raw = yaml.load(f, Loader=_UniqueKeyLoader)  # noqa: S506 - SafeLoader subclass
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)
         where = f"{path}:{mark.line + 1}" if mark is not None else path
@@ -361,10 +388,17 @@ def shape_errors(raw: dict[object, object]) -> list[str]:
     tools = raw.get("tools")
     for name, tool in tools.items() if isinstance(tools, dict) else []:
         where = f"tools.{name}"
+        if not isinstance(name, str) or not name.strip():
+            errors.append(
+                f"tools: tool name {name!r} must be a non-empty string (quote it in YAML)"
+            )
+            continue
         if not isinstance(tool, dict):
             errors.append(f"{where}: must be a mapping with at least 'effect'")
             continue
         errors += _unknown_keys(where, tool, _TOOL_KEYS)
+        if tool.get("effect") is None:
+            errors.append(f"{where}: 'effect' is required (read, write or send)")
         returns = tool.get("returns")
         if returns is not None and not (
             isinstance(returns, str)
@@ -394,6 +428,9 @@ def _did_you_mean(name: str, known: Iterable[str]) -> str:
     options = list(known)
     if _ALIASES.get(name) in options:
         return f" (did you mean '{_ALIASES[name]}'?)"
+    folded = name.strip().lower()
+    if folded != name and folded in options:
+        return f" (did you mean '{folded}'?)"
     close = difflib.get_close_matches(name, options, n=1)
     return f" (did you mean '{close[0]}'?)" if close else ""
 

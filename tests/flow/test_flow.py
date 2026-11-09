@@ -178,20 +178,27 @@ def test_approved_proposal_runs_once_with_the_frozen_args(tmp_path: Path) -> Non
     pid = _blocked(g)
     sent: list[dict[str, object]] = []
     with pytest.raises(ProposalError, match="pending, not approved"):
-        g.execute(pid, lambda **kw: sent.append(kw))
+        g.execute(pid, {"send_email": lambda **kw: sent.append(kw)})
     g.decide(pid, approve=True, by="alice")
-    g.execute(pid, lambda **kw: sent.append(kw))
+    g.execute(pid, {"send_email": lambda **kw: sent.append(kw)})
     assert sent == [{"to": "boss@corp.test", "body": "summary"}]
     with pytest.raises(ProposalError, match="executed"):
-        g.execute(pid, lambda **kw: sent.append(kw))
+        g.execute(pid, {"send_email": lambda **kw: sent.append(kw)})
 
 
-def test_changed_args_are_refused(tmp_path: Path) -> None:
+def test_execute_runs_only_the_approved_tool_with_the_approved_args(tmp_path: Path) -> None:
     g = _guard(tmp_path)
     pid = _blocked(g)
     g.decide(pid, approve=True, by="alice")
-    with pytest.raises(ProposalError, match="arguments differ"):
-        g.execute(pid, lambda **kw: None, {"to": "attacker@evil.test", "body": "summary"})
+    wired: list[object] = []
+    with pytest.raises(ProposalError, match="'send_email', which is not in the tools"):
+        g.execute(pid, {"wire_money": lambda **kw: wired.append(kw)})
+    assert wired == []
+    proposal = g.proposal(pid)
+    assert proposal is not None
+    proposal.args["to"] = "attacker@evil.test"  # tampering with the stored proposal
+    with pytest.raises(ProposalError, match="stored arguments were altered"):
+        g.execute(pid, {"send_email": lambda **kw: None})
 
 
 def test_decided_once_and_rejected_never_runs(tmp_path: Path) -> None:
@@ -201,7 +208,7 @@ def test_decided_once_and_rejected_never_runs(tmp_path: Path) -> None:
     with pytest.raises(ProposalError, match="already rejected"):
         g.decide(pid, approve=True, by="mallory")
     with pytest.raises(ProposalError, match="rejected, not approved"):
-        g.execute(pid, lambda **kw: None)
+        g.execute(pid, {"send_email": lambda **kw: None})
     with pytest.raises(ValueError):
         g.decide(_blocked(g), approve=True, by="")
 
@@ -215,7 +222,7 @@ def test_execute_is_at_most_once_under_concurrency(tmp_path: Path) -> None:
 
     def worker() -> None:
         try:
-            g.execute(pid, lambda **kw: runs.append(1))
+            g.execute(pid, {"send_email": lambda **kw: runs.append(1)})
         except ProposalError as exc:
             errors.append(exc)
 
@@ -240,12 +247,12 @@ def test_pending_lists_undecided_proposals(tmp_path: Path) -> None:
 
 def test_call_runs_observes_and_raises_when_blocked(tmp_path: Path) -> None:
     g = _guard(tmp_path)
-    assert g.call("s", "search_web", lambda q: f"results for {q}", q="pricing") == (
+    assert g.call("s", "search_web", lambda q: f"results for {q}", {"q": "pricing"}) == (
         "results for pricing"
     )
     assert g.labels("s") == {Label.UNTRUSTED}
     with pytest.raises(FlowBlocked) as exc:
-        g.call("s", "send_email", lambda **kw: None, to="x@evil.test")
+        g.call("s", "send_email", lambda **kw: None, {"to": "x@evil.test"})
     assert exc.value.admission.proposal is not None
     assert "waiting for approval" in str(exc.value)
 
@@ -275,12 +282,14 @@ def test_file_store_survives_restart_and_is_tamper_evident(tmp_path: Path) -> No
     pid = _blocked(g)
     g.decide(pid, approve=True, by="alice")
 
+    g.store.close()
     restarted = _guard(tmp_path, store=FileStore(log))
     assert restarted.labels("s") == {Label.UNTRUSTED, Label.SENSITIVE}
     proposal = restarted.store.get_proposal(pid)
     assert proposal is not None and proposal.status == "approved"
     assert proposal.reasons[0].provenance[0].tool == "read_inbox"
     assert verify_main(["verify", str(log)]) == 0
+    restarted.store.close()
 
     lines = log.read_text().splitlines()
     first = json.loads(lines[0])
@@ -288,7 +297,7 @@ def test_file_store_survives_restart_and_is_tamper_evident(tmp_path: Path) -> No
     lines[0] = json.dumps(first)
     log.write_text("\n".join(lines) + "\n")
     assert verify_main(["verify", str(log)]) == 1
-    with pytest.raises(StoreCorrupted, match="hash chain broken"):
+    with pytest.raises(StoreCorrupted, match="entry 1 does not match the hash chain"):
         FileStore(log)
 
 

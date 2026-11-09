@@ -69,7 +69,13 @@ flow:
     it `send`. When unsure, declare `send`.
 
 An undeclared tool is treated as a `send` whose results are `untrusted`, or refused with
-`flow: {undeclared: deny}`.
+`flow: {undeclared: deny}` (recommended once your tool list is complete).
+
+**Globs.** An exact name wins over a glob. When several globs match a tool, they combine
+conservatively: the most restrictive effect and all their labels, so the order in the file never
+matters (`"crm_*": read` and `"crm_send*": send` make `crm_send_mail` a send). A glob also
+covers tools added later: `"*_report": {effect: read}` silently makes a future `send_report` a
+read. Use globs only for families whose effect you control, and never `"*": {effect: read}`.
 
 ---
 
@@ -79,13 +85,15 @@ An undeclared tool is treated as a `send` whose results are `untrusted`, or refu
 from theaios.guardrails import load_policy
 from theaios.guardrails.flow import FlowGuard, FlowBlocked
 
-guard = FlowGuard(load_policy("guardrails.yaml"))
+guard = FlowGuard(load_policy("guardrails.yaml"))   # one per process, kept for its lifetime
 
 # In your tool dispatcher:
 admission = guard.admit(session_id, "send_email", {"to": to, "body": body}, agent="assistant")
 if admission.allowed:
-    result = send_email(to=to, body=body)
-    guard.observe(session_id, "send_email")      # after EVERY tool call
+    try:
+        result = send_email(to=to, body=body)
+    finally:
+        guard.observe(session_id, "send_email")  # after EVERY call that ran, even if it raised
 elif admission.proposal is not None:
     queue_for_approval(admission.proposal)       # tell the model it is waiting
 else:
@@ -95,20 +103,32 @@ else:
 Or let the guard do the three steps:
 
 ```python
-result = guard.call(session_id, "read_inbox", read_inbox)        # admit, run, observe
-guard.call(session_id, "send_email", send_email, to=to, body=body)  # raises FlowBlocked
+result = guard.call(session_id, "read_inbox", read_inbox)               # admit, run, observe
+guard.call(session_id, "send_email", send_email, {"to": to, "body": body})  # raises FlowBlocked
 
 @guard.tool("send_email", session=lambda: current_session_id())
 def send(to: str, body: str) -> str: ...
 ```
 
-`observe` must be called after every tool call that ran (`call`, the decorator and `execute`
-do it for you). Forgetting it is the one way to misuse the API: the session would not know
-what it read.
+Arguments are passed as a dict, never mixed with the guard's own parameters: a model that puts
+`"agent": "admin"` in its tool arguments cannot change the identity your profiles check.
+Arguments must be plain JSON (strings, numbers, booleans, null, lists, objects with string
+keys) and at most 1 MB; anything else raises `ValueError`, because the approval digest must
+cover every byte.
 
-Each call is also evaluated against your existing rules and profiles as an `action` event
-(`data` = the arguments plus `action` = the tool name). A rule's `deny` wins over everything;
-a rule's `require_approval` joins the flow reasons in the same proposal.
+`observe` must be called after every tool call that ran, **including one that raised**: an
+error message can carry the injected content. `call`, the decorator and `execute` do it for
+you. Forgetting it is the one way to misuse the API: the session would not know what it read.
+
+**Keep one guard.** Taint lives in the guard's store. A guard created per request with the
+default in-memory store forgets everything between requests.
+
+Each call is also evaluated against your existing rules and profiles, as an `action` event
+(`data` = the arguments plus `action` = the tool name) and as a `tool_call` event
+(`data` = `{"tool_name": ..., "arguments": {...}}`), so rules written for either scope apply.
+A rule's `deny` wins over everything; a rule's `require_approval` joins the flow reasons in the
+same proposal. `agent` is what your profiles and rules see; taint is per `session_id` only, so
+never reuse a session id across users.
 
 ---
 
@@ -136,20 +156,27 @@ admission.reasons[0].provenance   # [Provenance(tool="read_inbox", label=..., ca
 ## Proposals: decided once, executed by code
 
 A blocked call becomes a `Proposal`: the tool, the exact arguments, a SHA-256 digest of both,
-the reasons and the tier. The agent does not retry it; a person decides, and your code runs it.
+the reasons and the tier. A person decides; your code runs it.
 
 ```python
+TOOLS = {"send_email": send_email, "create_ticket": create_ticket}   # your tool registry
+
 for p in guard.pending(session_id):
     show(p.tool, p.args, [r.message for r in p.reasons])
 
 guard.decide(p.id, approve=True, by="lea", note="checked the address")   # once
-guard.execute(p.id, send_email)   # runs send_email(**p.args), at most once
+guard.execute(p.id, TOOLS)   # runs TOOLS[p.tool](**p.args), at most once
+guard.proposal(p.id)         # any proposal by id, whatever its status
 ```
 
 - A proposal can be decided **once**; a second decision raises `ProposalError`.
-- `execute` runs **only** an approved proposal, **only** with the proposed arguments (passing
-  different ones is refused), and **at most once**, even under concurrency. It is marked
-  executed before it runs, so a failed call is not retried automatically.
+- `execute` runs **only** an approved proposal, **only** the function registered under the
+  approved tool name, **only** with the proposed arguments, and **at most once**, even under
+  concurrency. It is marked executed before it runs: a call that fails is not retried, and a
+  retry needs a new approval.
+- If the model asks again for the same call, for the same reasons, while it is pending, `admit`
+  returns the existing proposal instead of queueing a duplicate. If the reasons changed (the
+  session read something since), a new proposal states them.
 - Approval covers that one call. The session stays tainted: the next send needs its own
   approval. To start a fresh task, `guard.clear(session_id, by="lea", reason="new task")`.
 
@@ -166,16 +193,46 @@ from theaios.guardrails.flow import FileStore
 guard = FlowGuard(policy, store=FileStore(".guardrails_flow/state.jsonl"))
 ```
 
-Every label, proposal, decision and clear is appended to a hash-chained log
-(theaios-core). Editing or deleting a line is detected:
+Every label, proposal, decision and clear is appended to a hash-chained log (theaios-core).
+Next to it, `state.jsonl.head` records how many entries there are and the last hash, so that
+deleting the last lines is caught too (a hash chain alone cannot see its end being cut).
+`FileStore` checks both when it opens the file and raises `StoreCorrupted` rather than resume
+from a history that was edited, truncated or emptied. Check a file from the command line:
 
 ```bash
-python -m theaios.core.audit verify .guardrails_flow/state.jsonl
+guardrails flow-verify .guardrails_flow/state.jsonl   # exit 0 intact, 1 otherwise
 ```
 
-`FileStore` verifies the chain when it opens the file and raises `StoreCorrupted` if the
-history was edited, rather than resuming from it. One process per store file: two processes
-appending to the same file would break the chain.
+- **One store per file.** `FileStore` holds a lock (`state.jsonl.lock`) while open; a second
+  open, in this process or another, raises `StoreInUse`. Close it (`store.close()` or
+  `with FileStore(...) as store:`) to release it.
+- **Private.** The files are created readable by their owner only (0600): they hold the
+  arguments of proposed calls. Back them up and delete them like any data they contain.
+- **Recovery.** The error says what happened. An interrupted write (crash) leaves an incomplete
+  last line: remove only that line. Anything else (edited, deleted or reordered entries, a
+  missing file or anchor) means the history cannot be trusted: restore both files from backup.
+  Starting a new file drops every label and pending proposal; do it knowingly.
+- **Limits.** This detects edits and truncation; it does not stop someone who can rewrite both
+  the log and its anchor. Protect the directory with file permissions, and copy the anchor
+  elsewhere if you need more.
+
+---
+
+## Who may do what
+
+The guard decides *whether* a call needs a person; it does not know *who* the person is.
+
+- **Never expose `decide`, `execute` or `clear` as tools the model can call.** The model would
+  approve its own proposals or clear its own taint.
+- `by=` in `decide` and `clear` is recorded as given: authenticate the approver in your own
+  application before calling them, and check they may decide for that session.
+- Anyone with a proposal id and the guard can call `execute`; keep proposal ids inside your
+  backend.
+- **Agent and approval UI.** Run the guard in one service (the one that runs the agent). Expose
+  pending proposals and a decide endpoint from that service to your approval UI, instead of
+  opening the same store from a second process.
+- Show the approver the reasons and the exact arguments, and watch the approval rate: if
+  people approve without reading, the control has become theatre.
 
 ---
 
@@ -209,8 +266,12 @@ if not report.ok:
     print(report.summary())   # "1 of 4 figures not found in sources: 3.4M"
 ```
 
-"3.2M" is grounded by "3,215,000", "12.3%" by "12.34%" or "0.1234". Whole numbers up to 10
-("3 steps") are skipped by default (`ignore_small=-1` checks them). Identifiers such as
-`gpt-4.1` or `Q3` and the parts of a date are not treated as claims. A figure written at low
-precision matches more ("3M" is grounded by anything from 2.5M to 3.5M); an ungrounded figure
-is not necessarily wrong (a correct sum is ungrounded too), it is one nobody can trace.
+"3.2M" is grounded by "3,215,000", "12.3%" by "12.34%" or "0.1234". European formats are read
+too ("9.999.000", "9 999 000", "12,34%"). Whole numbers up to 10 ("3 steps") are skipped by
+default (`ignore_small=-1` checks them).
+
+Not checked: **dates** in any common format ("2026-11-09", "11/09/2026", "14 March 2026"),
+**identifiers** glued to letters (`gpt-4.1`, `Q3`), and **currencies** ("$3,215,000" is grounded
+by "3,215,000 EUR": check currencies with a text rule). A figure written at low precision
+matches more ("3M" is grounded by anything from 2.5M to 3.5M). An ungrounded figure is not
+necessarily wrong (a correct sum is ungrounded too): it is one nobody can trace.

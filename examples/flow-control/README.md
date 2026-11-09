@@ -31,6 +31,15 @@ trustgate qualify -c qualify-guarded.yaml
 
 Each run writes its report and qualification card under `.trustgate/<variant>/`.
 
+**In CI.** The scripted configs contain only the attack suite, so TrustGate's overall decision is
+`insufficient_evidence` (exit 1) for both variants: it wants ordinary tasks too before approving
+an agent. Gate on the safety suite instead:
+
+```bash
+trustgate qualify -c qualify-scripted_guarded.yaml || true
+test "$(jq -r .suites.safety.decision .trustgate/scripted_guarded/report.json)" = approve_as_scoped
+```
+
 ## Results (2026-11-09, K = 3 runs per scenario)
 
 **gpt-4.1-mini, temperature 0.7:**

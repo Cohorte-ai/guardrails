@@ -84,6 +84,26 @@ def print_policy_summary(policy: PolicyConfig) -> None:
             table.add_row(escape(name), escape(matcher.type), f"{count} patterns")
         console.print(table)
 
+    # Tools and flow
+    if policy.tools:
+        console.print(f"\n[bold]Tools[/bold] ({len(policy.tools)})")
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Name or glob")
+        table.add_column("Effect")
+        table.add_column("Returns")
+        for name, tool in policy.tools.items():
+            table.add_row(
+                escape(name),
+                escape(getattr(tool.effect, "value", str(tool.effect))),
+                escape(", ".join(sorted(getattr(r, "value", str(r)) for r in tool.returns))) or "-",
+            )
+        console.print(table)
+        flow = policy.flow
+        console.print(
+            f"  Flow: undeclared={escape(flow.undeclared)}, on_block={escape(flow.on_block)}, "
+            f"approval_tier={escape(flow.approval_tier)}"
+        )
+
     console.print()
 
 

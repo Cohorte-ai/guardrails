@@ -51,9 +51,32 @@ def test_ungrounded(claim: str, bad: str) -> None:
 
 def test_identifiers_dates_and_small_counts_are_not_claims() -> None:
     text = "In Q3, gpt-4.1 wrote 3 sections on 2026-11-09 using model v2."
-    report = check_numbers(text, "")
-    assert [f.figure.text for f in report.findings] == ["2026"]  # the year is checked
-    assert check_numbers(text, "dated 2026").ok
+    assert check_numbers(text, "").findings == []
+    for date in ("14 March 2026", "March 15, 2026", "03/14/2026", "14.03.2026", "Nov 9th"):
+        assert check_numbers(f"Signed on {date}.", "").findings == [], date
+
+
+@pytest.mark.parametrize(
+    ("claim", "source", "grounded"),
+    [
+        ("Acme signed for 9.999.000 EUR.", "3,215,000 EUR", False),
+        ("Acme signed for 3.215.000 EUR.", "3,215,000 EUR", True),
+        ("Revenue 9 999 000 EUR.", "9,999,000", True),
+        ("Growth 12,34%.", "up 12.34%", True),
+        ("Growth 21,34%.", "up 12.34%", False),
+        ("We serve 12 300 sites.", "12 sites, 300 staff", True),
+        ("Margin 41% in March.", "Margin 41%", True),
+        ("Margin 45% in March.", "Margin 41%", False),
+        ("May 2026 revenue: 3.4M.", "3,215,000", False),
+    ],
+)
+def test_european_formats(claim: str, source: str, grounded: bool) -> None:
+    assert check_numbers(claim, source).ok is grounded
+
+
+def test_summary_wording() -> None:
+    assert check_numbers("nothing here", "").summary() == "no figures to check"
+    assert check_numbers("182 people", "182").summary() == "the figure is grounded in the sources"
 
 
 def test_ignore_options() -> None:
