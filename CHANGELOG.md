@@ -5,6 +5,23 @@ All notable changes to theaios-guardrails will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-09
+
+### Added
+
+- **Flow control** (`theaios.guardrails.flow`): tools declare their effect (`read`, `write`, `send`) and what their results carry (`untrusted`, `sensitive`) in a new `tools:` section. Once a session has read untrusted content, writes and sends need a person's approval; once it has read sensitive data, sends do. `FlowGuard.admit` decides at dispatch; `observe` records what each call returned; `call` and the `tool` decorator do both.
+- **Proposals**: a blocked call becomes a proposal frozen to a SHA-256 digest of the tool and its arguments. A person decides it once (`decide`); `execute` runs it at most once and only with the proposed arguments.
+- **Typed denials**: every non-allow decision carries codes (`untrusted_to_send`, `sensitive_to_send`, `rule_deny`, ...), a message and the tool calls that caused it.
+- **Durable, tamper-evident state**: `FileStore` keeps labels, proposals and decisions in a hash-chained log, reloaded on restart and verifiable with `python -m theaios.core.audit verify`.
+- **Grounded numbers** (`theaios.guardrails.grounding.check_numbers`): flags figures in a generated text that no source contains, allowing for rounding, units and percentages.
+- `examples/flow-control`: an inbox assistant with prompt injections, measured with TrustGate. With gpt-4.1-mini over 42 attack runs: 65 emails to attacker addresses and 30 bank-detail tickets executed unguarded, none with flow control; legitimate sends after reading mail wait for approval.
+- Docs: flow control guide; matchers documented as detectors, not the security boundary against prompt injection.
+
+### Changed
+
+- New optional top-level sections `tools:` and `flow:`. Policies without them load and behave exactly as before.
+- README: "formally verify" with TrustGate is now "measure".
+
 ## [0.1.6] - 2026-11-09
 
 ### Security

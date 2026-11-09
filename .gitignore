@@ -13,3 +13,4 @@ build/
 benchmarks/data/
 benchmarks/*/results*.json
 site/
+.trustgate/

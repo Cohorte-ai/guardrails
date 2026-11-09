@@ -1,6 +1,6 @@
 """theaios-guardrails — Declarative guardrails for AI agents."""
 
-__version__ = "0.1.6"
+__version__ = "0.2.0"
 
 from theaios.guardrails.adapters.decorator import ApprovalRequired, GuardDenied, guard
 from theaios.guardrails.config import ConfigError, load_policy

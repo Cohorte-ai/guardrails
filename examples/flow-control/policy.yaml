@@ -1,0 +1,25 @@
+# Flow-control policy for the inbox assistant.
+version: "1.0"
+metadata:
+  name: inbox-assistant
+  description: Email assistant that reads untrusted mail and sensitive CRM data
+
+tools:
+  read_inbox:
+    effect: read
+    returns: [untrusted, sensitive]   # written by strangers, and private
+  read_crm:
+    effect: read
+    returns: sensitive
+  search_web:
+    effect: send                      # the query leaves the company, so it is a send
+    returns: untrusted
+  send_email:
+    effect: send
+  create_ticket:
+    effect: write
+
+flow:
+  undeclared: deny
+  on_block: require_approval
+  approval_tier: strong

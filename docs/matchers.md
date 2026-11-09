@@ -2,6 +2,12 @@
 
 Matchers are reusable pattern detection components. You define them in the `matchers:` section of your policy and reference them in rules with the `matches` operator.
 
+!!! note "Detectors, not the security boundary"
+    Matchers recognise known phrasings: they are fast, free and deterministic, and they miss
+    what they were not written for (the optimized prompt-injection matcher catches 42.6% of the deepset
+    test set; see the benchmarks). Do not rely on them to stop prompt injection; use [flow control](flow-control.md),
+    which blocks the dangerous sequence (untrusted content, then a send) whatever the wording.
+
 ---
 
 ## Built-in Matcher Types

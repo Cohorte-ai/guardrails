@@ -147,3 +147,16 @@ Return all registered matcher type names.
 | `ExpressionError` | `theaios.guardrails.expressions` | Expression cannot be parsed or evaluated |
 | `GuardDenied` | `theaios.guardrails.adapters.decorator` | `@guard` decorator: rule denied the event |
 | `ApprovalRequired` | `theaios.guardrails.adapters.decorator` | `@guard` decorator: rule requires approval |
+
+---
+
+## Flow control and grounding
+
+`theaios.guardrails.flow`: `FlowGuard(policy, store=None, engine=None)` with `admit`,
+`observe`, `call`, `tool`, `labels`, `clear`, `pending`, `decide`, `execute`; stores
+`MemoryStore` and `FileStore(path)`; types `Admission`, `Proposal`, `Denial`, `Code`,
+`Effect`, `Label`, `Verdict`; exceptions `FlowBlocked`, `ProposalError`.
+`theaios.guardrails.grounding`: `check_numbers(text, sources, ignore_small=10, ignore=None)`
+returning a `GroundingReport` (`ok`, `ungrounded`, `summary()`). See the
+[flow control guide](flow-control.md).
+
