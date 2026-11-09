@@ -30,8 +30,9 @@ _MONTH = (
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?"
     r"|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b\.?"
 )
-# A day is not followed by a separator and more digits: "March 9,999,000" is a figure.
-_DAY = r"(?:3[01]|[12]\d|0?[1-9])(?:st|nd|rd|th)?\b(?![.,]\d)"
+# A day is not followed by a separator and more digits: "March 9,999,000" and
+# "March 9 999 000" are figures.
+_DAY = r"(?:3[01]|[12]\d|0?[1-9])(?:st|nd|rd|th)?\b(?![.,]\d|[ \u00a0\u202f]\d{3}\b)"
 # Dates are not figures: they are removed before extraction, in every common format.
 _DATES = re.compile(
     r"\b\d{4}-\d{1,2}-\d{1,2}\b"  # 2026-11-09
@@ -47,7 +48,8 @@ _DATES = re.compile(
 _NUMBER = re.compile(
     r"(?<![\w.\-/:])"
     r"(?P<sign>-)?"
-    r"(?P<int>\d{1,3}(?:,\d{3})+"  # 1,234,567
+    r"(?P<int>\d{1,3}(?:\.\d{3})+(?=,\d{1,2}(?!\d))"  # 1.234,56 (European decimal comma)
+    r"|\d{1,3}(?:,\d{3})+"  # 1,234,567
     r"|\d{1,3}(?:\.\d{3}){2,}"  # 9.999.000 (two groups or more: 1.234 stays a decimal)
     r"|\d{1,3}(?:[ \u00a0\u202f]\d{3}){2,}"  # 9 999 000
     r"|\d+)"

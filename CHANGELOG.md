@@ -44,6 +44,12 @@ A second, independent re-verification then found more, also fixed with tests:
 - A function decorated with `@guard.tool` in the `execute` registry admitted itself again and never ran; `execute` now runs the original. The decorator refuses `*args`/`**kwargs` tools, whose calls could not be replayed exactly.
 - Non-string keys in arguments (`{1: "x"}`) were silently turned into strings; they are refused. An existing state file is tightened to 0600. `pending`, `proposal` and `decide` return copies.
 
+A second re-verification found:
+
+- `admit` (and `FlowBlocked.admission`) returned the stored proposal itself: application code that set its status to `approved` could execute it with no decision. Every accessor now returns a copy, and `execute` requires a recorded decision.
+- Asking again for a call that was approved but not yet run created a second proposal, so one call could run twice; the approved one is returned instead (and superseded if the reasons changed).
+- `check_numbers`: a space-grouped figure after a month name ("In March 9 999 000") and a European decimal ("1.234,56") are read as single figures.
+
 ### Changed
 
 - New optional top-level sections `tools:` and `flow:`. Policies without them load and behave exactly as before.

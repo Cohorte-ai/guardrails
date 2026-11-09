@@ -195,8 +195,10 @@ By default labels and proposals live in memory. Keep them across restarts, and m
 history tamper-evident, with a file store:
 
 ```python
-from theaios.guardrails.flow import FileStore
+from theaios.guardrails import load_policy
+from theaios.guardrails.flow import FileStore, FlowGuard
 
+policy = load_policy("guardrails.yaml")
 guard = FlowGuard(policy, store=FileStore(".guardrails_flow/state.jsonl"))
 ```
 
@@ -282,7 +284,8 @@ too ("9.999.000", "9 999 000", "12,34%"). Whole numbers up to 10 ("3 steps") are
 default (`ignore_small=-1` checks them).
 
 Not checked: **dates** in common formats ("2026-11-09", "11/09/2026", "14 March 2026",
-"March 15, 2026"; month names in English only, so "14 mars 2026" is read as figures),
+"March 15, 2026"; month names in English only, so "14 mars 2026" is read as figures, and a
+year without a day, as in "March 2026" or "Q3 2026", is checked as a figure),
 **identifiers** glued to letters (`gpt-4.1`, `Q3`), and **currencies** ("$3,215,000" is grounded
 by "3,215,000 EUR": check currencies with a text rule). A figure written at low precision
 matches more ("3M" is grounded by anything from 2.5M to 3.5M). An ungrounded figure is not

@@ -23,6 +23,7 @@ from theaios.guardrails.flow import (
     FileStore,
     FlowBlocked,
     FlowGuard,
+    ProposalError,
     Label,
     StoreCorrupted,
     StoreInUse,
@@ -369,3 +370,71 @@ def test_an_existing_state_file_is_made_private(tmp_path: Path) -> None:
     with FileStore(path):
         assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
     assert not path.with_name(path.name + ".lock").exists()
+
+
+# --- Second re-verification findings --------------------------------------------------------
+
+
+def test_changing_the_returned_proposal_cannot_approve_it(guard: FlowGuard) -> None:
+    sent: list[object] = []
+    guard.observe("s", "fetch_url")
+    p = guard.admit("s", "post_slack", {"channel": "#evil"}).proposal
+    assert p is not None
+    p.status = "approved"  # application code flips the copy it was given
+    with pytest.raises(ProposalError, match="pending, not approved"):
+        guard.execute(p.id, {"post_slack": lambda **kw: sent.append(kw)})
+    try:
+        guard.call("s", "post_slack", lambda **kw: None, {"channel": "#evil2"})
+    except FlowBlocked as exc:
+        blocked = exc.admission.proposal
+        assert blocked is not None
+        blocked.status, blocked.tool, blocked.reasons = "approved", "read_notes", []
+    stored = guard.proposal(blocked.id)
+    assert stored is not None and stored.status == "pending" and stored.reasons
+    assert sent == []
+
+
+def test_execute_requires_a_recorded_decision(guard: FlowGuard) -> None:
+    guard.observe("s", "fetch_url")
+    p = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert p is not None
+    stored = guard.store.get_proposal(p.id)
+    assert stored is not None
+    stored.status = "approved"  # someone with access to the store, without decide()
+    with pytest.raises(ProposalError, match="no recorded decision"):
+        guard.execute(p.id, {"post_slack": lambda **kw: None})
+
+
+def test_an_approved_call_asked_again_is_not_proposed_twice(guard: FlowGuard) -> None:
+    runs: list[object] = []
+    guard.observe("s", "fetch_url")
+    first = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert first is not None
+    guard.decide(first.id, approve=True, by="lea")
+    again = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert again is not None and again.id == first.id and again.status == "approved"
+    guard.observe("s", "read_notes")  # new reasons: the approval is superseded
+    third = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert third is not None and third.id != first.id
+    with pytest.raises(ProposalError, match="superseded"):
+        guard.execute(first.id, {"post_slack": lambda **kw: runs.append(kw)})
+    guard.decide(third.id, approve=True, by="lea")
+    guard.execute(third.id, {"post_slack": lambda **kw: runs.append(kw)})
+    assert len(runs) == 1
+
+
+@pytest.mark.parametrize(
+    ("claim", "source", "grounded"),
+    [
+        ("In March 9 999 000 units", "In March 999 000 units", False),
+        ("In May 12 500 000 EUR", "In May 500 000 EUR", False),
+        ("Total 1.234,56 EUR", "1234.56", True),
+        ("Total 12.345,67 EUR", "12345.67", True),
+        ("Total 12.345,67 EUR", "12345.76", False),
+        ("Signed March 15 2026.", "", True),
+    ],
+)
+def test_more_number_formats(claim: str, source: str, grounded: bool) -> None:
+    from theaios.guardrails.grounding import check_numbers
+
+    assert check_numbers(claim, source).ok is grounded

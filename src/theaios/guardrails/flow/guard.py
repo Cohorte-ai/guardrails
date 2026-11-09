@@ -270,7 +270,7 @@ class FlowGuard:
             for existing in self._store.proposals(session_id):
                 if (
                     existing.digest == digest
-                    and existing.status == "pending"
+                    and existing.status in ("pending", "approved")
                     and existing.tier == tier
                     and [r.code for r in existing.reasons] == [r.code for r in reasons]
                 ):
@@ -278,14 +278,14 @@ class FlowGuard:
                         Verdict.REQUIRE_APPROVAL,
                         tool,
                         spec.effect,
-                        existing.reasons,
-                        existing,
+                        copy.deepcopy(existing.reasons),
+                        copy.deepcopy(existing),
                         labels=labels,
                     )
             # An older pending proposal for the same call states outdated reasons: retire it,
             # so the same call cannot be approved and run twice.
             for existing in self._store.proposals(session_id):
-                if existing.digest == digest and existing.status == "pending":
+                if existing.digest == digest and existing.status in ("pending", "approved"):
                     existing.status = "superseded"
                     existing.note = "superseded: the reasons changed"
                     self._store.update_proposal(existing)
@@ -315,7 +315,9 @@ class FlowGuard:
             created_at=time.time(),
         )
         self._store.save_proposal(proposal)
-        return Admission(Verdict.REQUIRE_APPROVAL, tool, effect, reasons, proposal, labels=labels)
+        return Admission(
+            Verdict.REQUIRE_APPROVAL, tool, effect, reasons, copy.deepcopy(proposal), labels=labels
+        )
 
     def _flow_reasons(
         self, session_id: str, tool: str, spec: ToolSpec, declared: bool
@@ -401,6 +403,8 @@ class FlowGuard:
                 raise ProposalError(f"unknown proposal {proposal_id}")
             if p.status != "approved":
                 raise ProposalError(f"proposal {proposal_id} is {p.status}, not approved")
+            if not p.decided_by or p.decided_at is None:
+                raise ProposalError(f"proposal {proposal_id} has no recorded decision")
             fn = tools.get(p.tool)
             # A function decorated with @guard.tool would admit itself again: run the original.
             fn = getattr(fn, "_flow_original", fn)

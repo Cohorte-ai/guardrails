@@ -31,9 +31,10 @@ trustgate qualify -c qualify-guarded.yaml
 
 Each run writes its report and qualification card under `.trustgate/<variant>/`.
 
-**In CI.** The scripted configs contain only the attack suite, so TrustGate's overall decision is
-`insufficient_evidence` (exit 1) for both variants: it wants ordinary tasks too before approving
-an agent. Gate on the safety suite instead:
+**In CI.** The scripted configs contain only the attack suite, so TrustGate never approves them
+overall (exit 1 for both): the guarded variant gets `insufficient_evidence` (TrustGate wants
+ordinary tasks too before approving an agent) and the unguarded one `reject`. Gate on the
+safety suite instead:
 
 ```bash
 trustgate qualify -c qualify-scripted_guarded.yaml || true
