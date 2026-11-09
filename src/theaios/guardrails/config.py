@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Iterable
+from typing import cast
 from pathlib import Path
 
 import yaml
@@ -12,6 +13,10 @@ from theaios.core.expressions import ExpressionError, compile_expression, refere
 from theaios.guardrails.matchers import get_matcher, list_matchers
 from theaios.guardrails.matchers.pii import BUILTIN_PII_NAMES
 from theaios.guardrails.types import (
+    Effect,
+    FlowConfig,
+    Label,
+    ToolSpec,
     VALID_OUTCOMES,
     VALID_SCOPES,
     VALID_SEVERITIES,
@@ -166,7 +171,37 @@ def _parse_policy(raw: dict[str, object]) -> PolicyConfig:
                 options=options,
             )
 
+    # Tools (flow control). Invalid values are kept as given and reported by validate_policy.
+    tools: dict[str, ToolSpec] = {}
+    tools_raw = raw.get("tools", {})
+    if isinstance(tools_raw, dict):
+        for tname, traw in tools_raw.items():
+            if not isinstance(traw, dict):
+                continue
+            returns_raw = traw.get("returns", [])
+            if isinstance(returns_raw, str):
+                returns_raw = [returns_raw]
+            tools[str(tname)] = ToolSpec(
+                name=str(tname),
+                effect=cast(Effect, _enum_or_raw(Effect, traw.get("effect"))),
+                returns=frozenset(
+                    cast(Label, _enum_or_raw(Label, r))
+                    for r in (returns_raw if isinstance(returns_raw, list) else [])
+                ),
+                description=str(traw.get("description", "")),
+            )
+    flow_raw = raw.get("flow", {})
+    flow_cfg = FlowConfig()
+    if isinstance(flow_raw, dict):
+        flow_cfg = FlowConfig(
+            undeclared=str(flow_raw.get("undeclared", flow_cfg.undeclared)),
+            on_block=str(flow_raw.get("on_block", flow_cfg.on_block)),
+            approval_tier=str(flow_raw.get("approval_tier", flow_cfg.approval_tier)),
+        )
+
     return PolicyConfig(
+        tools=tools,
+        flow=flow_cfg,
         version=version,
         metadata=metadata,
         variables=variables,
@@ -176,7 +211,18 @@ def _parse_policy(raw: dict[str, object]) -> PolicyConfig:
     )
 
 
-_TOP_KEYS = {"version", "metadata", "variables", "profiles", "rules", "matchers"}
+_TOP_KEYS = {
+    "version",
+    "metadata",
+    "variables",
+    "profiles",
+    "rules",
+    "matchers",
+    "tools",
+    "flow",
+}
+_TOOL_KEYS = {"effect", "returns", "description"}
+_FLOW_KEYS = {"undeclared", "on_block", "approval_tier"}
 _RULE_KEYS = {
     "name",
     "scope",
@@ -212,13 +258,22 @@ def _unknown_keys(where: str, raw: dict[object, object], allowed: set[str]) -> l
     ]
 
 
+def _enum_or_raw(enum: type[Effect] | type[Label], value: object) -> object:
+    """The enum member for a value, or the value itself (as a string) for validation to
+    report."""
+    try:
+        return enum(str(value))
+    except ValueError:
+        return str(value)
+
+
 def shape_errors(raw: dict[object, object]) -> list[str]:
     """Structural problems in a raw policy mapping that parsing would otherwise hide: unknown
     keys (a typo such as ``rule:`` or ``enabeld:``), a section of the wrong type (a mapping
     where a list is expected), conditions that are not strings, flags that are not booleans.
     Each of these used to load silently and change what the policy does."""
     errors = _unknown_keys("policy", raw, _TOP_KEYS)
-    for key in ("metadata", "variables", "profiles", "matchers"):
+    for key in ("metadata", "variables", "profiles", "matchers", "tools", "flow"):
         if key in raw and raw[key] is not None and not isinstance(raw[key], dict):
             errors.append(f"'{key}' must be a mapping, got {type(raw[key]).__name__}")
     rules = raw.get("rules")
@@ -303,6 +358,22 @@ def shape_errors(raw: dict[object, object]) -> list[str]:
                 errors += _unknown_keys(
                     f"matchers.{name}.options", options, _BUILTIN_OPTIONS[str(matcher["type"])]
                 )
+    tools = raw.get("tools")
+    for name, tool in tools.items() if isinstance(tools, dict) else []:
+        where = f"tools.{name}"
+        if not isinstance(tool, dict):
+            errors.append(f"{where}: must be a mapping with at least 'effect'")
+            continue
+        errors += _unknown_keys(where, tool, _TOOL_KEYS)
+        returns = tool.get("returns")
+        if returns is not None and not (
+            isinstance(returns, str)
+            or (isinstance(returns, list) and all(isinstance(x, str) for x in returns))
+        ):
+            errors.append(f"{where}: 'returns' must be a label or a list of labels")
+    flow = raw.get("flow")
+    if isinstance(flow, dict):
+        errors += _unknown_keys("flow", flow, _FLOW_KEYS)
     return errors
 
 
@@ -465,6 +536,28 @@ def validate_policy(config: PolicyConfig) -> list[str]:
                 f"profiles.{name}: invalid default_tier '{profile.default_tier}', "
                 f"expected one of {sorted(VALID_TIERS)}"
             )
+
+    # Tools and flow (flow control)
+    effects = [e.value for e in Effect]
+    labels = [label.value for label in Label]
+    for name, tool in config.tools.items():
+        if not isinstance(tool.effect, Effect):
+            errors.append(
+                f"tools.{name}: 'effect' must be one of {effects}, got '{tool.effect}'"
+                f"{_did_you_mean(str(tool.effect), effects)}"
+            )
+        for label in tool.returns:
+            if not isinstance(label, Label):
+                errors.append(
+                    f"tools.{name}: unknown label '{label}' in 'returns', expected "
+                    f"{labels}{_did_you_mean(str(label), labels)}"
+                )
+    if config.flow.undeclared not in ("treat_as_send", "deny"):
+        errors.append("flow.undeclared must be 'treat_as_send' or 'deny'")
+    if config.flow.on_block not in ("require_approval", "deny"):
+        errors.append("flow.on_block must be 'require_approval' or 'deny'")
+    if config.flow.approval_tier not in ("soft", "strong"):
+        errors.append("flow.approval_tier must be 'soft' or 'strong'")
 
     # Matchers: the type must be registered (built-in, or a custom type registered with
     # @register_matcher before loading), and the matcher must build (e.g. its regexes compile).

@@ -173,6 +173,48 @@ class PolicyMetadata:
     author: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Flow control declarations (tools: and flow: sections)
+# ---------------------------------------------------------------------------
+
+
+class Effect(str, Enum):
+    """What calling a tool does to the world."""
+
+    READ = "read"  # brings content into the session; changes nothing
+    WRITE = "write"  # changes state inside the organisation (records, files, tickets)
+    SEND = "send"  # moves content outside the session's trust boundary (email, web, API)
+
+
+class Label(str, Enum):
+    """What a tool's result carries into the session."""
+
+    UNTRUSTED = "untrusted"  # written by someone other than the principal (inbox, web pages)
+    SENSITIVE = "sensitive"  # private data that must not leave (CRM, HR, finance)
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """A tool's declaration in the policy's ``tools:`` section."""
+
+    name: str
+    effect: Effect
+    returns: frozenset[Label] = frozenset()
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class FlowConfig:
+    """The policy's ``flow:`` section. Defaults are the conservative choice."""
+
+    # A tool the policy does not declare is treated as SEND whose results are UNTRUSTED.
+    # "deny" refuses it outright instead.
+    undeclared: str = "treat_as_send"
+    # What a block becomes: "require_approval" (a proposal a person decides) or "deny".
+    on_block: str = "require_approval"
+    approval_tier: str = "strong"
+
+
 @dataclass
 class PolicyConfig:
     """Top-level policy configuration — maps 1:1 to guardrails.yaml."""
@@ -183,3 +225,5 @@ class PolicyConfig:
     profiles: dict[str, ProfileConfig] = field(default_factory=dict)
     rules: list[RuleConfig] = field(default_factory=list)
     matchers: dict[str, MatcherConfig] = field(default_factory=dict)
+    tools: dict[str, ToolSpec] = field(default_factory=dict)
+    flow: FlowConfig = field(default_factory=FlowConfig)
