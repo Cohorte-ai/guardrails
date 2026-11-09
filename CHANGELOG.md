@@ -50,6 +50,14 @@ A second re-verification found:
 - Asking again for a call that was approved but not yet run created a second proposal, so one call could run twice; the approved one is returned instead (and superseded if the reasons changed).
 - `check_numbers`: a space-grouped figure after a month name ("In March 9 999 000") and a European decimal ("1.234,56") are read as single figures.
 
+A final red-team pass on the proposal lifecycle found, and these are fixed:
+
+- `decide(approve="false")` approved (the string is truthy): `approve` must be `True` or `False`.
+- `execute` trusted a `_flow_original` attribute, which `functools.wraps` copies: an application wrapper (redaction, audit) could be skipped, and any function carrying the attribute could redirect the call. Decorated tools are now recognised by identity, and only under the name they were decorated with.
+- The decorator recorded only the arguments passed, so defaults ran unseen by the approver; defaults are now included. Positional-only parameters are refused (they burned the approval).
+- The store returns and keeps copies of proposals.
+- Docs: what flow control protects against (the model and the content it reads) and what it trusts (your application code).
+
 ### Changed
 
 - New optional top-level sections `tools:` and `flow:`. Policies without them load and behave exactly as before.

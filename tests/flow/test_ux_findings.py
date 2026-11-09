@@ -345,7 +345,7 @@ def test_a_decorated_tool_works_in_the_execute_registry(guard: FlowGuard) -> Non
 
 
 def test_variadic_tools_are_refused_by_the_decorator(guard: FlowGuard) -> None:
-    with pytest.raises(TypeError, match="needs named parameters"):
+    with pytest.raises(TypeError, match="can be passed by name"):
 
         @guard.tool("post_slack", session=lambda: "s")
         def send(to: str, *cc: str, **headers: str) -> None: ...
@@ -401,6 +401,7 @@ def test_execute_requires_a_recorded_decision(guard: FlowGuard) -> None:
     stored = guard.store.get_proposal(p.id)
     assert stored is not None
     stored.status = "approved"  # someone with access to the store, without decide()
+    guard.store.update_proposal(stored)
     with pytest.raises(ProposalError, match="no recorded decision"):
         guard.execute(p.id, {"post_slack": lambda **kw: None})
 
@@ -438,3 +439,100 @@ def test_more_number_formats(claim: str, source: str, grounded: bool) -> None:
     from theaios.guardrails.grounding import check_numbers
 
     assert check_numbers(claim, source).ok is grounded
+
+
+# --- Final red-team findings ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["false", "no", "0", 2, None, 1])
+def test_decide_requires_a_real_boolean(guard: FlowGuard, value: object) -> None:
+    guard.observe("s", "fetch_url")
+    p = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert p is not None
+    with pytest.raises(TypeError, match="approve must be True or False"):
+        guard.decide(p.id, approve=value, by="lea")  # type: ignore[arg-type]
+    still = guard.proposal(p.id)
+    assert still is not None and still.status == "pending"
+
+
+def test_the_store_hands_out_copies(guard: FlowGuard) -> None:
+    guard.observe("s", "fetch_url")
+    p = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert p is not None
+    live = guard.store.get_proposal(p.id)
+    assert live is not None
+    live.status, live.decided_by, live.decided_at = "approved", "x", 1.0  # not written back
+    with pytest.raises(ProposalError, match="pending, not approved"):
+        guard.execute(p.id, {"post_slack": lambda **kw: None})
+
+
+def test_application_wrappers_are_never_skipped(guard: FlowGuard) -> None:
+    import functools
+
+    runs: list[str] = []
+
+    @guard.tool("post_slack", session=lambda: "s")
+    def post(channel: str) -> None:
+        runs.append(f"orig {channel}")
+
+    def plain(**kw: object) -> None:
+        runs.append("plain")
+
+    plain._flow_original = lambda **kw: runs.append("EVIL")  # type: ignore[attr-defined]
+
+    @functools.wraps(post)
+    def audited(**kw: object) -> None:
+        runs.append("audit")
+        post(**kw)  # type: ignore[arg-type]
+
+    guard.observe("s", "fetch_url")
+    with pytest.raises(FlowBlocked) as exc:
+        post("#t")
+    pid = exc.value.admission.proposal.id  # type: ignore[union-attr]
+    guard.decide(pid, approve=True, by="lea")
+    guard.execute(pid, {"post_slack": plain})
+    assert runs == ["plain"]  # an attribute cannot redirect execute
+    with pytest.raises(FlowBlocked):  # a wrapper around a guarded tool runs, and is guarded
+        audited(channel="#t")
+    assert runs == ["plain", "audit"]
+
+
+def test_a_guarded_tool_under_another_name_is_refused(guard: FlowGuard) -> None:
+    @guard.tool("read_notes", session=lambda: "s")
+    def notes(channel: str) -> None: ...
+
+    guard.observe("s", "fetch_url")
+    p = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert p is not None
+    guard.decide(p.id, approve=True, by="lea")
+    with pytest.raises(ProposalError, match="is the guarded tool 'read_notes'"):
+        guard.execute(p.id, {"post_slack": notes})
+
+
+def test_the_approver_sees_default_arguments(guard: FlowGuard) -> None:
+    @guard.tool("post_slack", session=lambda: "s")
+    def post(channel: str, text: str = "hello", *, cc: str = "team") -> None: ...
+
+    guard.observe("s", "fetch_url")
+    with pytest.raises(FlowBlocked) as exc:
+        post("#t")
+    proposal = exc.value.admission.proposal
+    assert proposal is not None
+    assert proposal.args == {"channel": "#t", "text": "hello", "cc": "team"}
+
+
+def test_positional_only_tools_are_refused(guard: FlowGuard) -> None:
+    with pytest.raises(TypeError, match="positional-only"):
+
+        @guard.tool("post_slack", session=lambda: "s")
+        def post(channel: str, /) -> None: ...
+
+
+def test_decide_and_clear_reject_non_string_names(guard: FlowGuard) -> None:
+    guard.observe("s", "fetch_url")
+    p = guard.admit("s", "post_slack", {"channel": "#t"}).proposal
+    assert p is not None
+    with pytest.raises(ValueError):
+        guard.decide(p.id, approve=True, by=None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        guard.clear("s", by=123, reason="x")  # type: ignore[arg-type]

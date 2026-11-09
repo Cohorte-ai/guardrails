@@ -181,9 +181,13 @@ guard.proposal(p.id)         # any proposal by id, whatever its status
   `superseded`, so the same call cannot be approved twice. `clear` leaves pending proposals
   pending: a person still decides them.
 - `pending`, `proposal` and `decide` return copies; changing them changes nothing.
-- Functions decorated with `@guard.tool` can go in the registry: `execute` runs the original
-  function, without admitting it again. The decorator refuses functions with `*args` or
-  `**kwargs`, whose calls could not be replayed exactly as approved.
+- Functions decorated with `@guard.tool` can go in the registry, under the name they were
+  decorated with: `execute` runs the original function without admitting it again. Any other
+  function, including your own wrapper around a decorated one, runs as it is (a wrapper that
+  calls a guarded tool is guarded again).
+- The decorator passes default argument values explicitly, so the approver sees every value
+  the call will use. It refuses functions with `*args`, `**kwargs` or positional-only
+  parameters, whose calls could not be replayed exactly as approved.
 - Approval covers that one call. The session stays tainted: the next send needs its own
   approval. To start a fresh task, `guard.clear(session_id, by="lea", reason="new task")`.
 
@@ -235,10 +239,18 @@ guardrails flow-verify .guardrails_flow/state.jsonl   # exit 0 intact, 1 otherwi
 
 The guard decides *whether* a call needs a person; it does not know *who* the person is.
 
+**What it protects against: the model, and the content the model reads.** Your application
+code is trusted: it can call your tools directly, and it can write the guard's store
+(`guard.store` and its methods are internal; use the guard's methods). Flow control stops a
+prompt injection from acting through the model; it does not stop your own code from bypassing
+it.
+
 - **Never expose `decide`, `execute` or `clear` as tools the model can call.** The model would
   approve its own proposals or clear its own taint.
 - `by=` in `decide` and `clear` is recorded as given: authenticate the approver in your own
   application before calling them, and check they may decide for that session.
+- `decide(approve=...)` accepts only `True` or `False`: convert form or JSON input explicitly
+  (the string `"false"` is truthy, so it is refused rather than read as an approval).
 - Anyone with a proposal id and the guard can call `execute`; keep proposal ids inside your
   backend.
 - **Agent and approval UI.** Run the guard in one service (the one that runs the agent). Expose

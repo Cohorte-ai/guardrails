@@ -199,7 +199,8 @@ def test_execute_runs_only_the_approved_tool_with_the_approved_args(tmp_path: Pa
     copy.args["to"] = "attacker@evil.test"  # a copy: changing it changes nothing
     stored = g.store.get_proposal(pid)
     assert stored is not None and stored.args["to"] != "attacker@evil.test"
-    stored.args["to"] = "attacker@evil.test"  # tampering with the store itself
+    stored.args["to"] = "attacker@evil.test"  # tampering through the store's own API
+    g.store.update_proposal(stored)
     with pytest.raises(ProposalError, match="stored arguments were altered"):
         g.execute(pid, {"send_email": lambda **kw: None})
 

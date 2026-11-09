@@ -128,6 +128,8 @@ class FlowGuard:
         self._tools: dict[str, ToolSpec] = dict(policy.tools)
         self._store = store if store is not None else MemoryStore()
         self._engine = engine if engine is not None else _Engine(policy)
+        # Functions decorated by this guard: id -> (wrapper, tool name, original function).
+        self._decorated: dict[int, tuple[Callable[..., Any], str, Callable[..., Any]]] = {}
 
     @property
     def store(self) -> MemoryStore:
@@ -181,7 +183,11 @@ class FlowGuard:
     def clear(self, session_id: str, *, by: str, reason: str) -> None:
         """Forget a session's labels (for example at the start of a new task). Recorded with
         who did it and why. Pending proposals stay pending: a person still decides them."""
-        if not by.strip() or not reason.strip():
+        if (
+            not isinstance(by, str)
+            or not isinstance(reason, str)
+            or not (by.strip() and reason.strip())
+        ):
             raise ValueError("clear() needs who is clearing the session and why")
         self._store.clear(session_id, by, reason)
 
@@ -375,7 +381,12 @@ class FlowGuard:
     def decide(self, proposal_id: str, *, approve: bool, by: str, note: str = "") -> Proposal:
         """A person approves or rejects a proposal. Once: a decided proposal cannot be
         decided again."""
-        if not by.strip():
+        if type(approve) is not bool:
+            raise TypeError(
+                f"approve must be True or False, not {approve!r} (convert form or JSON input "
+                "explicitly: the string 'false' is truthy)"
+            )
+        if not isinstance(by, str) or not by.strip():
             raise ValueError("decide() needs who decided")
         with self._store.lock:
             p = self._store.get_proposal(proposal_id)
@@ -406,8 +417,17 @@ class FlowGuard:
             if not p.decided_by or p.decided_at is None:
                 raise ProposalError(f"proposal {proposal_id} has no recorded decision")
             fn = tools.get(p.tool)
-            # A function decorated with @guard.tool would admit itself again: run the original.
-            fn = getattr(fn, "_flow_original", fn)
+            # A function this guard decorated would admit itself again: run its original, and
+            # only for the tool it was decorated as. Recognised by identity, never by an
+            # attribute (functools.wraps would copy one onto an application wrapper).
+            decorated = self._decorated.get(id(fn)) if fn is not None else None
+            if decorated is not None and decorated[0] is fn:
+                if decorated[1] != p.tool:
+                    raise ProposalError(
+                        f"proposal {proposal_id} is for '{p.tool}', but the function registered "
+                        f"for it is the guarded tool '{decorated[1]}'"
+                    )
+                fn = decorated[2]
             if fn is None:
                 raise ProposalError(
                     f"proposal {proposal_id} is for '{p.tool}', which is not in the tools "
@@ -456,24 +476,25 @@ class FlowGuard:
         def wrap(fn: Callable[..., T]) -> Callable[..., T]:
             tool_name = name or fn.__name__
             signature = inspect.signature(fn)
-            variadic = [
+            unusable = [
                 p.name
                 for p in signature.parameters.values()
-                if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+                if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD, p.POSITIONAL_ONLY)
             ]
-            if variadic:
+            if unusable:
                 raise TypeError(
-                    f"@guard.tool needs named parameters: '{tool_name}' takes "
-                    f"{', '.join('*' + v for v in variadic)}, which an approved call could not "
-                    "replay exactly"
+                    f"@guard.tool needs parameters that can be passed by name: '{tool_name}' "
+                    f"has {', '.join(unusable)} (*args, **kwargs or positional-only), which an "
+                    "approved call could not replay exactly"
                 )
 
             @functools.wraps(fn)
             def wrapper(*a: Any, **kw: Any) -> T:
                 bound = signature.bind(*a, **kw)
+                bound.apply_defaults()  # the approver sees every value the call will use
                 return self.call(session(), tool_name, fn, dict(bound.arguments), agent=agent)
 
-            wrapper._flow_original = fn  # type: ignore[attr-defined]
+            self._decorated[id(wrapper)] = (wrapper, tool_name, fn)
             return wrapper
 
         return wrap

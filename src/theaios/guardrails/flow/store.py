@@ -18,6 +18,7 @@ log-and-anchor pair, or delete both files. Protect the directory with file permi
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import threading
@@ -71,19 +72,22 @@ class MemoryStore:
 
     # Proposals -------------------------------------------------------------------------
 
+    # Proposals are stored and returned as copies: no caller holds the stored object.
+
     def save_proposal(self, proposal: Proposal) -> None:
         with self._lock:
             self._record({"type": "proposal", **_proposal_dict(proposal)})
-            self._proposals[proposal.id] = proposal
+            self._proposals[proposal.id] = copy.deepcopy(proposal)
 
     def get_proposal(self, proposal_id: str) -> Proposal | None:
         with self._lock:
-            return self._proposals.get(proposal_id)
+            p = self._proposals.get(proposal_id)
+            return copy.deepcopy(p) if p is not None else None
 
     def proposals(self, session_id: str | None = None) -> list[Proposal]:
         with self._lock:
             return [
-                p
+                copy.deepcopy(p)
                 for p in self._proposals.values()
                 if session_id is None or p.session_id == session_id
             ]
@@ -100,7 +104,7 @@ class MemoryStore:
                     "note": proposal.note,
                 }
             )
-            self._proposals[proposal.id] = proposal
+            self._proposals[proposal.id] = copy.deepcopy(proposal)
 
     @property
     def lock(self) -> threading.RLock:
