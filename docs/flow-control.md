@@ -173,6 +173,10 @@ Every label, proposal, decision and clear is appended to a hash-chained log
 python -m theaios.core.audit verify .guardrails_flow/state.jsonl
 ```
 
+`FileStore` verifies the chain when it opens the file and raises `StoreCorrupted` if the
+history was edited, rather than resuming from it. One process per store file: two processes
+appending to the same file would break the chain.
+
 ---
 
 ## What it costs, and what it does not do

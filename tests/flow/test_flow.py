@@ -18,6 +18,7 @@ from theaios.guardrails.flow import (
     FlowGuard,
     Label,
     ProposalError,
+    StoreCorrupted,
     Verdict,
 )
 
@@ -287,6 +288,8 @@ def test_file_store_survives_restart_and_is_tamper_evident(tmp_path: Path) -> No
     lines[0] = json.dumps(first)
     log.write_text("\n".join(lines) + "\n")
     assert verify_main(["verify", str(log)]) == 1
+    with pytest.raises(StoreCorrupted, match="hash chain broken"):
+        FileStore(log)
 
 
 # --- Policy file ------------------------------------------------------------------------

@@ -13,9 +13,13 @@ from typing import Any, cast
 from dataclasses import asdict
 from pathlib import Path
 
-from theaios.core.audit import JsonlLog
+from theaios.core.audit import JsonlLog, verify_chain
 
 from theaios.guardrails.flow.types import Denial, Label, Proposal, Provenance
+
+
+class StoreCorrupted(Exception):
+    """The file store's hash chain does not verify: its history was edited."""
 
 
 class MemoryStore:
@@ -88,7 +92,17 @@ class FileStore(MemoryStore):
 
     def __init__(self, path: str | Path) -> None:
         super().__init__()
-        self._log = JsonlLog(path, chain=True)
+        p = Path(path)
+        if p.exists():
+            # Refuse a history that was edited: removing the line that recorded "read the
+            # inbox" would silently untaint a session.
+            intact, count = verify_chain(p)
+            if not intact:
+                raise StoreCorrupted(
+                    f"{p}: hash chain broken after {count} entries; the flow history was "
+                    "edited or truncated. Investigate before resuming."
+                )
+        self._log = JsonlLog(p, chain=True)
         self._replaying = True
         for entry in self._log.entries():
             self._apply(dict(entry))

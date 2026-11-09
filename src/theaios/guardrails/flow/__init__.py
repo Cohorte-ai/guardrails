@@ -4,7 +4,7 @@ See docs/flow-control.md.
 """
 
 from theaios.guardrails.flow.guard import FlowGuard, args_digest
-from theaios.guardrails.flow.store import FileStore, MemoryStore
+from theaios.guardrails.flow.store import FileStore, MemoryStore, StoreCorrupted
 from theaios.guardrails.flow.types import (
     Admission,
     Code,
@@ -33,6 +33,7 @@ __all__ = [
     "MemoryStore",
     "Proposal",
     "ProposalError",
+    "StoreCorrupted",
     "Provenance",
     "ToolSpec",
     "Verdict",
