@@ -47,7 +47,7 @@ def _construct_unique_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -
     loader.flatten_mapping(node)
     seen: dict[Any, int] = {}
     for key_node, _ in node.value:
-        key = loader.construct_object(key_node, deep=True)  # type: ignore[no-untyped-call]
+        key = loader.construct_object(key_node, deep=True)  # type: ignore[no-untyped-call, unused-ignore]
         if key in seen:
             raise yaml.constructor.ConstructorError(
                 None,
@@ -57,7 +57,7 @@ def _construct_unique_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -
                 key_node.start_mark,
             )
         seen[key] = key_node.start_mark.line
-    return dict(loader.construct_pairs(node, deep=True))  # type: ignore[no-untyped-call]
+    return dict(loader.construct_pairs(node, deep=True))  # type: ignore[no-untyped-call, unused-ignore]
 
 
 _UniqueKeyLoader.add_constructor(
