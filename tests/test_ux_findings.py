@@ -205,3 +205,42 @@ def test_unparseable_amount_fails_closed(tmp_path: Path) -> None:
     decision = engine.evaluate(GuardEvent(scope="action", agent="a", data={"amount": "10,000"}))
     assert decision.outcome == "deny"
     assert "could not be evaluated" in decision.reason
+
+
+# --- Re-verification findings ------------------------------------------------------------
+
+
+def test_condition_key_suggests_when_not_description(tmp_path: Path) -> None:
+    assert "unknown key 'condition' (did you mean 'when'?)" in _errors(
+        tmp_path, CAP.replace("when:", "condition:")
+    )
+
+
+def test_unknown_redact_pattern_name_is_rejected(tmp_path: Path) -> None:
+    body = (
+        "rules:\n  - name: r\n    scope: output\n    when: content matches pii\n"
+        "    then: redact\n    patterns: [sssn]\n"
+    )
+    assert "redact pattern 'sssn' is not a matcher or a named pattern in one" in _errors(
+        tmp_path, body
+    )
+
+
+def test_named_pii_pattern_is_accepted(tmp_path: Path) -> None:
+    body = (
+        "rules:\n  - name: r\n    scope: output\n    when: content matches pii\n"
+        "    then: redact\n    patterns: [ssn, email]\n"
+    )
+    _load(tmp_path, body)
+
+
+def test_cli_shows_fail_closed_reason_verbatim(tmp_path: Path) -> None:
+    from click.testing import CliRunner
+
+    from theaios.guardrails.cli import main
+
+    path = tmp_path / "p.yaml"
+    path.write_text(BASE + CAP.replace("then: deny", "then: deny\n    reason: over [cap]"))
+    event = '{"scope": "action", "agent": "a", "data": {"amount": "10,000"}}'
+    result = CliRunner().invoke(main, ["check", "-c", str(path), "-e", event])
+    assert "over [cap] [rule could not be evaluated" in result.output.replace("\n", " ")

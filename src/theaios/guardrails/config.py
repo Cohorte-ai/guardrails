@@ -10,6 +10,7 @@ import yaml
 from theaios.core.expressions import ExpressionError, compile_expression, references
 
 from theaios.guardrails.matchers import get_matcher, list_matchers
+from theaios.guardrails.matchers.pii import BUILTIN_PII_NAMES
 from theaios.guardrails.types import (
     VALID_OUTCOMES,
     VALID_SCOPES,
@@ -305,9 +306,39 @@ def shape_errors(raw: dict[object, object]) -> list[str]:
     return errors
 
 
+# Keys from a neighbouring library or a common guess, mapped to the right key here. Checked
+# before fuzzy matching, which can suggest something harmful (`condition` -> `description`
+# would leave a rule with no condition, matching everything).
+_ALIASES = {
+    "condition": "when",
+    "if": "when",
+    "outcome": "then",
+    "from_agent": "from",
+    "to_agent": "to",
+    "pattern": "patterns",
+}
+
+
 def _did_you_mean(name: str, known: Iterable[str]) -> str:
-    close = difflib.get_close_matches(name, list(known), n=1)
+    options = list(known)
+    if _ALIASES.get(name) in options:
+        return f" (did you mean '{_ALIASES[name]}'?)"
+    close = difflib.get_close_matches(name, options, n=1)
     return f" (did you mean '{close[0]}'?)" if close else ""
+
+
+def _redact_pattern_names(config: PolicyConfig) -> set[str] | None:
+    """Names a redact rule may list: matcher names and the named patterns inside built-in
+    matchers. None when a custom matcher type is used, since its pattern names are unknown."""
+    names = set(config.matchers)
+    for matcher in config.matchers.values():
+        if matcher.type not in ("regex", "pii", "keyword_list"):
+            return None
+        if isinstance(matcher.patterns, dict):
+            names |= set(matcher.patterns)
+        if matcher.type == "pii":
+            names |= set(BUILTIN_PII_NAMES)
+    return names
 
 
 def redact_patterns(rule: RuleConfig) -> list[str]:
@@ -411,6 +442,14 @@ def validate_policy(config: PolicyConfig) -> list[str]:
 
         # A redact rule needs something to redact with: its own patterns, or the matchers its
         # condition uses. Without either it matched and changed nothing.
+        if rule.enabled and rule.then == "redact" and rule.patterns:
+            known = _redact_pattern_names(config)
+            for pname in rule.patterns:
+                if known is not None and pname not in known:
+                    errors.append(
+                        f"{prefix} ({rule.name}): redact pattern '{pname}' is not a matcher or "
+                        f"a named pattern in one{_did_you_mean(pname, known)}"
+                    )
         if rule.enabled and rule.then == "redact" and not redact_patterns(rule):
             errors.append(
                 f"{prefix} ({rule.name}): redact rule has nothing to redact with; add "

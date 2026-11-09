@@ -19,12 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - matcher `patterns` that are not a list or mapping of strings (a `keyword_list` with a single string never fired), an empty `regex` or `keyword_list`, and a regex that does not compile (validation passed, then the engine crashed).
 - A redact rule without `patterns` redacted nothing while reporting `redact`, so the README quick start's rule returned PII unchanged. It now redacts with the matchers its `when` uses; a redact rule with neither is rejected.
 - A string amount such as `"10000"` passed a numeric cap (`amount > $max_transfer`) because it was compared as text. Numbers in strings now compare as numbers; a value that cannot be compared with a number (`"10,000"`) makes the rule fail closed (theaios-core 0.1.1).
+- A redact rule listing a pattern name that no matcher defines (`patterns: [sssn]`) redacted nothing when the policy had no matchers, and everything otherwise. Pattern names are now checked against the matcher names and the named patterns inside built-in matchers (skipped when a custom matcher type is used).
+- `==`, `!=`, `in` and `not in` treat `"1001"` and `1001` as equal, so a blocklist of numeric ids cannot be bypassed by sending the id as a string (theaios-core 0.1.1).
 - `Engine(...)` built from a `PolicyConfig` in code now runs the same validation as `load_policy` and raises `ConfigError`; before, `then="block"` or `scope="actions"` was accepted and silently allowed everything.
 
 ### Fixed
 
 - YAML syntax errors, a directory or a non-UTF-8 file passed as the policy raise `ConfigError` with the file and line instead of a Python traceback.
 - Custom matcher types registered with `@register_matcher` (as documented in docs/matchers.md) were rejected by validation; matcher types are now checked against the registry.
+- `guardrails check`, `inspect` and `audit` printed text in square brackets as terminal markup, so a reason like "[rule could not be evaluated ...]" disappeared; all policy and event text is now shown verbatim.
+- An unknown rule key `condition:` suggested `description` (following it left a rule that matches everything); it now suggests `when`.
+- docs/matchers.md described a `custom_class` config key that never existed.
 - docs/expressions.md: the operator-precedence example described the wrong grouping, and the variables section said undefined variables fail at evaluation time.
 
 ### Changed

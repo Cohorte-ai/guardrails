@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from theaios.guardrails.types import Decision, PolicyConfig
@@ -13,12 +14,12 @@ console = Console()
 def print_policy_summary(policy: PolicyConfig) -> None:
     """Print a formatted summary of a policy."""
     if policy.metadata.name:
-        console.print(f"\n[bold]{policy.metadata.name}[/bold]")
+        console.print(f"\n[bold]{escape(policy.metadata.name)}[/bold]")
     if policy.metadata.description:
-        console.print(f"  {policy.metadata.description}")
+        console.print(f"  {escape(policy.metadata.description)}")
     console.print(f"  Version: {policy.version}")
     if policy.metadata.author:
-        console.print(f"  Author: {policy.metadata.author}")
+        console.print(f"  Author: {escape(policy.metadata.author)}")
 
     # Profiles
     if policy.profiles:
@@ -31,11 +32,11 @@ def print_policy_summary(policy: PolicyConfig) -> None:
         table.add_column("Deny")
         for name, profile in policy.profiles.items():
             table.add_row(
-                name,
-                profile.extends or "-",
-                profile.default_tier,
-                ", ".join(profile.allow) or "-",
-                ", ".join(profile.deny) or "-",
+                escape(name),
+                escape(profile.extends) or "-",
+                escape(profile.default_tier),
+                escape(", ".join(profile.allow)) or "-",
+                escape(", ".join(profile.deny)) or "-",
             )
         console.print(table)
 
@@ -57,12 +58,12 @@ def print_policy_summary(policy: PolicyConfig) -> None:
                 "low": "dim",
             }.get(rule.severity, "white")
             table.add_row(
-                rule.name,
-                rule.scope,
-                rule.then,
+                escape(rule.name),
+                escape(rule.scope),
+                escape(rule.then),
                 f"[{severity_color}]{rule.severity}[/{severity_color}]",
                 "[green]yes[/green]" if rule.enabled else "[red]no[/red]",
-                ", ".join(rule.tags) or "-",
+                escape(", ".join(rule.tags)) or "-",
             )
         console.print(table)
 
@@ -80,7 +81,7 @@ def print_policy_summary(policy: PolicyConfig) -> None:
                 count = str(len(matcher.patterns))
             else:
                 count = "0"
-            table.add_row(name, matcher.type, f"{count} patterns")
+            table.add_row(escape(name), escape(matcher.type), f"{count} patterns")
         console.print(table)
 
     console.print()
@@ -101,13 +102,13 @@ def print_evaluation_result(decision: Decision) -> None:
         end="",
     )
     if decision.rule:
-        console.print(f"  (rule: {decision.rule})", end="")
+        console.print(f"  (rule: {escape(decision.rule)})", end="")
     if decision.dry_run:
         console.print("  [dim][DRY RUN][/dim]", end="")
     console.print()
 
     if decision.reason:
-        console.print(f"  Reason: {decision.reason}")
+        console.print(f"  Reason: {escape(decision.reason)}")
     if decision.tier:
         console.print(f"  Tier: {decision.tier}")
     if decision.severity:
@@ -149,11 +150,11 @@ def print_audit_summary(entries: list[dict[str, object]]) -> None:
 
         table.add_row(
             ts,
-            str(entry.get("agent", "")),
-            str(entry.get("scope", "")),
+            escape(str(entry.get("agent", ""))),
+            escape(str(entry.get("scope", ""))),
             f"[{outcome_color}]{outcome}[/{outcome_color}]",
-            str(entry.get("rule", "-")),
-            str(entry.get("severity", "-")),
+            escape(str(entry.get("rule", "-"))),
+            escape(str(entry.get("severity", "-"))),
         )
     console.print(table)
     console.print()
