@@ -19,6 +19,9 @@ _BUILTIN_PII: dict[str, tuple[str, str]] = {
 }
 
 
+BUILTIN_PII_NAMES = tuple(_BUILTIN_PII)
+
+
 @register_matcher("pii")
 class PIIMatcher(Matcher):
     """Detect and redact personally identifiable information.

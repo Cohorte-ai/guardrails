@@ -220,7 +220,7 @@ Every matcher must implement:
 
 ### Loading Custom Matchers
 
-Custom matchers must be registered before the engine loads. Two ways:
-
-1. **Import in your code** (recommended): Import the module that contains your `@register_matcher` before creating the engine
-2. **`custom_class`** in config (advanced): Reference a dotted Python path in the matcher config
+Custom matchers must be registered before the policy loads: import the module that contains
+your `@register_matcher` before calling `load_policy` or creating the engine. A policy that uses
+an unregistered type is rejected with the list of registered types. (There is no config key that
+loads a matcher class by path.)

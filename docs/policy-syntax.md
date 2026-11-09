@@ -235,6 +235,15 @@ when: "(action == 'write' or action == 'delete') and resource.domain in $sensiti
 
 If `when` is empty or omitted, the rule always matches events of the specified scope.
 
+Every `$variable` and matcher a `when` clause names must be defined in the policy. A policy that
+references an undefined one (usually a typo, such as `$max_amout` or `prompt_injectoin`) is
+rejected when it loads, by `load_policy`, `Engine(...)` and `guardrails validate`, with a
+suggestion when a close name exists. Disabled rules are not checked.
+
+The structure is checked too: an unknown key (a typo such as `rule:`, `condition:` or
+`enabeld:`), a section of the wrong type (`rules` must be a list), a `when` that is not a string,
+or `enabled` in quotes is an error, never silently ignored.
+
 ---
 
 ## Rule Types — Detailed Examples
@@ -555,6 +564,10 @@ Understanding how the engine evaluates rules is important for writing predictabl
 6. **If no DENY** — highest-tier REQUIRE_APPROVAL wins
 7. **If no DENY or APPROVAL** — all REDACT decisions are merged
 8. **If nothing matches** — default is **ALLOW**
+
+A rule whose condition cannot be evaluated is treated as **matched**, never skipped: a broken
+deny rule denies, a broken approval rule requires approval. The decision's reason says the rule
+could not be evaluated. (Load-time validation makes this rare; it is the safety net.)
 
 !!! tip "Default is ALLOW"
     If no rule matches, the event is allowed. Guardrails add restrictions on top of your existing authorization layer — they don't replace it. Your auth system handles "who can do what." Guardrails handle "what should never happen."
