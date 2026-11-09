@@ -16,6 +16,7 @@ from theaios.guardrails.expressions import (
     compile_expression,
     evaluate as eval_expr,
 )
+from theaios.guardrails.config import rule_reference_errors
 from theaios.guardrails.matchers import Matcher, get_matcher
 from theaios.guardrails.profiles import ResolvedProfile, check_profile_permission, resolve_profile
 from theaios.guardrails.rate_limit import RateLimiter
@@ -55,6 +56,9 @@ class Engine:
                 raise ExpressionError(
                     f"Error in rule '{rule.name}': {e}",
                 ) from e
+            problems = rule_reference_errors(rule, policy)
+            if problems:
+                raise ExpressionError(f"Error in rule '{rule.name}': {'; '.join(problems)}")
             self._compiled_rules.append((rule, ast))
 
         # Sort by severity (critical first), preserving declaration order within same severity
@@ -146,7 +150,9 @@ class Engine:
                     self._rate_limiter.record(rl_key, rule.rate_limit)
                     continue
 
-            # Evaluate condition
+            # Evaluate condition. A rule that cannot be evaluated is treated as matched (fail
+            # closed): skipping it would let a broken deny rule allow everything.
+            eval_error: str | None = None
             try:
                 result = eval_expr(
                     ast,
@@ -154,8 +160,8 @@ class Engine:
                     variables=self._policy.variables,
                     matchers=matcher_adapters,
                 )
-            except ExpressionError:
-                continue  # Skip rules with evaluation errors
+            except ExpressionError as exc:
+                result, eval_error = True, str(exc)
 
             if not result:
                 continue
@@ -172,7 +178,7 @@ class Engine:
                 deny_decision = Decision(
                     outcome="deny",
                     rule=rule.name,
-                    reason=rule.reason,
+                    reason=_reason(rule.reason, eval_error),
                     severity=rule.severity,
                     dry_run=self._dry_run,
                 )
@@ -185,7 +191,7 @@ class Engine:
                     approval_decision = Decision(
                         outcome="require_approval",
                         rule=rule.name,
-                        reason=rule.reason,
+                        reason=_reason(rule.reason, eval_error),
                         tier=tier,
                         severity=rule.severity,
                         dry_run=self._dry_run,
@@ -196,7 +202,7 @@ class Engine:
                     Decision(
                         outcome="redact",
                         rule=rule.name,
-                        reason=rule.reason,
+                        reason=_reason(rule.reason, eval_error),
                         severity=rule.severity,
                         dry_run=self._dry_run,
                         metadata={"patterns": rule.patterns},
@@ -288,6 +294,13 @@ class _MatcherAdapter:
 
     def match(self, text: str, pattern_name: str | None = None) -> bool:
         return self._matcher.match(text, pattern_name)
+
+
+def _reason(reason: str, eval_error: str | None) -> str:
+    if eval_error is None:
+        return reason
+    note = f"rule could not be evaluated ({eval_error}); treated as matched"
+    return f"{reason} [{note}]" if reason else note
 
 
 def _tier_rank(tier: str) -> int:

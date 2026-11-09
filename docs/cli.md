@@ -30,6 +30,13 @@ guardrails validate --config guardrails.yaml
 |--------|---------|-------------|
 | `--config`, `-c` | `guardrails.yaml` | Policy file path |
 
+Checks include an undefined `$variable` or matcher in any enabled rule's `when` clause:
+
+```bash
+guardrails validate --config guardrails.yaml
+# rules[2] (block-injection): 'when' uses undefined matcher 'prompt_injectoin' (did you mean 'prompt_injection'?)
+```
+
 Exit code 0 = valid, 1 = errors found.
 
 ---

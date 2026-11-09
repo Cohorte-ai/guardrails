@@ -5,6 +5,17 @@ All notable changes to theaios-guardrails will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-11-09
+
+### Security
+
+- A rule whose `when` clause named an undefined `$variable` or matcher (a typo such as `$max_amout` or `prompt_injectoin`) passed validation and was then silently skipped at every evaluation, so a deny rule with a typo allowed everything. Such policies are now rejected when they load (`load_policy`, `Engine(...)`, `guardrails validate`), with a "did you mean" suggestion. Disabled rules are not checked. **If your policy stops loading after upgrading, it had a rule that never fired.**
+- A rule whose condition cannot be evaluated is now treated as matched instead of skipped (fail closed): a deny rule denies, an approval rule requires approval, and the decision's reason says the rule could not be evaluated.
+
+### Changed
+
+- Requires theaios-core 0.1.1 or later.
+
 ## [0.1.5] - 2026-11-09
 
 ### Changed

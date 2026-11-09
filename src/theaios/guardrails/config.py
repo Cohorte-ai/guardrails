@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import difflib
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
+from theaios.core.expressions import ExpressionError, compile_expression, references
 
 from theaios.guardrails.types import (
     VALID_OUTCOMES,
@@ -157,6 +160,29 @@ def _parse_policy(raw: dict[str, object]) -> PolicyConfig:
     )
 
 
+def _did_you_mean(name: str, known: Iterable[str]) -> str:
+    close = difflib.get_close_matches(name, list(known), n=1)
+    return f" (did you mean '{close[0]}'?)" if close else ""
+
+
+def rule_reference_errors(rule: RuleConfig, config: PolicyConfig) -> list[str]:
+    """Problems in a rule's ``when``: a syntax error, or a ``$variable`` or matcher that the
+    policy does not define."""
+    try:
+        refs = references(compile_expression(rule.when))
+    except ExpressionError as exc:
+        return [f"invalid 'when': {exc}"]
+    errors = [
+        f"'when' uses undefined variable '${name}'{_did_you_mean(name, config.variables)}"
+        for name in sorted(refs.variables - set(config.variables))
+    ]
+    errors += [
+        f"'when' uses undefined matcher '{name}'{_did_you_mean(name, config.matchers)}"
+        for name in sorted(refs.matchers - set(config.matchers))
+    ]
+    return errors
+
+
 def validate_policy(config: PolicyConfig) -> list[str]:
     """Return list of validation errors (empty = valid)."""
     errors: list[str] = []
@@ -214,10 +240,12 @@ def validate_policy(config: PolicyConfig) -> list[str]:
             if rule.rate_limit.window < 1:
                 errors.append(f"{prefix} ({rule.name}): rate_limit.window must be >= 1")
 
-        # Check matcher references in when clause
-        if rule.when:
-            for matcher_name in config.matchers:
-                pass  # existence check is done at engine init time with compiled expressions
+        # Every $variable and matcher a condition names must be defined. Otherwise the rule
+        # could never fire: a typo in a deny rule would silently allow everything.
+        if rule.enabled and rule.when:
+            errors.extend(
+                f"{prefix} ({rule.name}): {e}" for e in rule_reference_errors(rule, config)
+            )
 
     # Profiles
     for name, profile in config.profiles.items():
