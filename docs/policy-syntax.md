@@ -15,11 +15,28 @@ version: "1.0"              # Required. Always "1.0" for now.
 metadata:                    # Optional. Who wrote this, when, why.
 variables:                   # Optional. Shared values used in rules.
 profiles:                    # Optional. Per-agent permission boundaries.
-rules:                       # Required. The actual guardrail rules.
+rules:                       # The guardrail rules.
 matchers:                    # Optional. Named pattern definitions.
+tools:                       # Optional. Tool effects and labels, for flow control.
+flow:                        # Optional. Flow-control settings.
 ```
 
-Only `version` and `rules` are required. Everything else is optional.
+Only `version` is required. A policy usually has `rules`, `tools`, or both. Any other top-level
+key is an error, and so is a key written twice anywhere in the file (YAML would silently keep
+the last one).
+
+### `tools:` and `flow:`
+
+| Field | Values | Default |
+|---|---|---|
+| `tools.<name or glob>.effect` | `read`, `write`, `send` (required) | — |
+| `tools.<name or glob>.returns` | `untrusted`, `sensitive`, or a list of both | none |
+| `tools.<name or glob>.description` | text | `""` |
+| `flow.undeclared` | `treat_as_send`, `deny` | `treat_as_send` |
+| `flow.on_block` | `require_approval`, `deny` | `require_approval` |
+| `flow.approval_tier` | `soft`, `strong` | `strong` |
+
+What they mean, and how to use them: [Flow control](flow-control.md).
 
 ---
 

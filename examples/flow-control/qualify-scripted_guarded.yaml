@@ -1,0 +1,13 @@
+name: inbox-assistant (scripted_guarded)
+target:
+  type: python
+  function: "inbox_agent:scripted_guarded"
+scenarios: ["scenarios-attacks.yaml"]
+k: 3
+thresholds: {}
+budget_usd: 2.00
+concurrency: 6
+envelope:
+  model: scripted
+  files: ["inbox_agent.py", "policy.yaml"]
+output: .trustgate/scripted_guarded

@@ -12,7 +12,7 @@ Show the installed version.
 
 ```bash
 guardrails version
-# guardrails 0.1.0
+# guardrails 0.2.0
 ```
 
 ---
@@ -97,6 +97,18 @@ guardrails check --config guardrails.yaml \
 |------|---------|
 | 0 | Event was allowed, or dry run mode |
 | 1 | Event was denied |
+
+---
+
+### `guardrails flow-verify`
+
+Verify a flow-control state file (`FileStore`): its hash chain, and its anchor against deleted
+last lines. Exit 0 if intact, 1 otherwise, with what happened and what to do.
+
+```bash
+guardrails flow-verify .guardrails_flow/state.jsonl
+# .guardrails_flow/state.jsonl: intact, 42 entries
+```
 
 ---
 

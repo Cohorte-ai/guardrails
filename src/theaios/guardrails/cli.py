@@ -59,7 +59,11 @@ def validate(config_path: str) -> None:
     n_rules = len(policy.rules)
     n_profiles = len(policy.profiles)
     n_matchers = len(policy.matchers)
-    click.echo(f"Policy is valid: {n_rules} rules, {n_profiles} profiles, {n_matchers} matchers")
+    n_tools = len(policy.tools)
+    click.echo(
+        f"Policy is valid: {n_rules} rules, {n_profiles} profiles, {n_matchers} matchers, "
+        f"{n_tools} tools"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -195,3 +199,22 @@ def audit(
             click.echo(json.dumps(entries, indent=2, default=str))
     else:
         print_audit_summary(entries)
+
+
+# ---------------------------------------------------------------------------
+# guardrails flow-verify
+# ---------------------------------------------------------------------------
+
+
+@main.command("flow-verify")
+@click.argument("path")
+def flow_verify(path: str) -> None:
+    """Verify a flow-state file (FileStore): hash chain and truncation anchor.
+
+    Exit 0 if intact, 1 otherwise, with what is wrong and what to do.
+    """
+    from theaios.guardrails.flow.store import check_store
+
+    ok, message = check_store(path)
+    click.echo(message, err=not ok)
+    sys.exit(0 if ok else 1)

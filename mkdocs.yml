@@ -57,6 +57,7 @@ nav:
       - Writing Policies: policy-syntax.md
       - Expression Language: expressions.md
   - Guides:
+      - Flow Control: flow-control.md
       - Matchers: matchers.md
       - Integration Guide: integration.md
       - Generate Policies with AI: ai-policy-generator.md
