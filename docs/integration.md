@@ -141,10 +141,16 @@ The callback hooks into:
 | LangChain Event | Guardrail Scope | What's checked |
 |----------------|----------------|---------------|
 | `on_llm_start` | `input` | Prompts before LLM sees them |
-| `on_llm_end` | `output` | LLM responses before delivery |
+| `on_llm_end` | `output` | LLM responses (when streaming, after the chunks were delivered) |
 | `on_tool_start` | `tool_call` | Tool calls before execution |
 
-If a guardrail denies, the callback raises `GuardDenied` which stops the chain.
+If a guardrail denies, the callback raises `GuardDenied`, which stops the run (a rule requiring
+approval raises `ApprovalRequired`). Before 0.2.1, LangChain logged the exception and the tool
+ran anyway. Tool calls are evaluated with their arguments, as `tool_call` and `action` events (so
+profile allow/deny lists apply). A tool invoked with a plain string instead of a dict (an LCEL
+chain piping text into a tool) exposes it only as `arguments.input`: the callback cannot see
+the tool's parameter names. Agents always pass a dict. The callback does not apply flow control (`tools:` /
+`flow:`), redaction, or output rules on tool results.
 
 ---
 

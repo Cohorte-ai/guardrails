@@ -5,6 +5,13 @@ All notable changes to theaios-guardrails will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-14
+
+### Security
+
+- `GuardrailsCallback` (LangChain) did not block anything: LangChain logs and swallows exceptions raised by callbacks unless the handler sets `raise_error`, so a tool call denied by a rule ran anyway (with a logged `GuardDenied`). The callback now sets `raise_error = True`: a denial or approval requirement stops the run, as documented.
+- `GuardrailsCallback` passed a tool call's arguments as their text (`arguments.input`), so rules on arguments (`arguments.amount > 100`) never fired; and it sent only `tool_call` events, so profile deny lists never applied to tools. It now passes the parsed arguments and evaluates the call as an `action` event too. The docs say what the callback does not apply: flow control, redaction, output rules on tool results.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added
