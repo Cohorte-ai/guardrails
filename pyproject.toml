@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "theaios-guardrails"
-version = "0.2.0"
+version = "0.3.0"
 description = "Declarative YAML-based policy engine for AI agent guardrails"
 readme = "README.md"
 license = "Apache-2.0"
@@ -30,7 +30,8 @@ dependencies = [
 [project.optional-dependencies]
 trustgate = ["theaios-trustgate>=0.2"]
 langchain = ["langchain-core>=0.3"]
-all = ["theaios-guardrails[trustgate,langchain]"]
+langchain-agent = ["langchain>=1.0,<2", "langgraph>=1.0,<2"]
+all = ["theaios-guardrails[trustgate,langchain,langchain-agent]"]
 dev = ["pytest>=8.0,<10", "ruff>=0.15,<0.16", "mypy>=1.19,<1.20", "types-pyyaml>=6.0", "pytest-asyncio>=1.0,<2"]
 
 [project.scripts]
