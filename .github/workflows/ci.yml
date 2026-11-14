@@ -74,6 +74,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev,langchain-agent]"
-      - name: LangChain agent middleware (must run, not skip)
-        run: pytest tests/adapters/test_langchain_agent.py -v --tb=short -rs | tee out.txt && ! grep -q SKIPPED out.txt
+      - name: LangChain middleware and callback (must run, not skip)
+        run: pytest tests/adapters/test_langchain_agent.py tests/adapters/test_langchain_callback.py -v --tb=short -rs | tee out.txt && ! grep -q SKIPPED out.txt
 
