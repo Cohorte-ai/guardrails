@@ -14,7 +14,7 @@ from theaios.guardrails.engine import Engine
 from theaios.guardrails.types import GuardEvent
 
 try:
-    from langchain_core.callbacks import BaseCallbackHandler  # type: ignore[import-not-found]
+    from langchain_core.callbacks import BaseCallbackHandler  # type: ignore[import-not-found, unused-ignore]
 except ImportError:
     raise ImportError(
         "LangChain adapter requires langchain-core. "
@@ -22,10 +22,12 @@ except ImportError:
     )
 
 
-class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc]
+class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc, unused-ignore]
     """LangChain callback that evaluates guardrails at each step.
 
-    Evaluates input guardrails on LLM/tool start, output guardrails on end.
+    Evaluates input guardrails on LLM/tool start, output guardrails on end. A denial raises
+    ``GuardDenied`` and an approval requirement ``ApprovalRequired``: the run stops. It
+    evaluates rules and profiles only, not flow control (``tools:`` / ``flow:``).
 
     Usage::
 
@@ -34,6 +36,10 @@ class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc]
         callback = GuardrailsCallback("guardrails.yaml", agent="my-agent")
         chain.invoke(input, config={"callbacks": [callback]})
     """
+
+    # LangChain logs and swallows exceptions raised by callbacks unless raise_error is set:
+    # without it a denied tool call ran anyway.
+    raise_error = True
 
     def __init__(
         self,

@@ -144,7 +144,10 @@ The callback hooks into:
 | `on_llm_end` | `output` | LLM responses before delivery |
 | `on_tool_start` | `tool_call` | Tool calls before execution |
 
-If a guardrail denies, the callback raises `GuardDenied` which stops the chain.
+If a guardrail denies, the callback raises `GuardDenied`, which stops the run (a rule requiring
+approval raises `ApprovalRequired`). Before 0.2.1, LangChain logged the exception and the tool
+ran anyway. The callback evaluates rules and profiles; it does not apply flow control
+(`tools:` / `flow:`).
 
 ---
 
