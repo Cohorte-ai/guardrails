@@ -146,8 +146,9 @@ The callback hooks into:
 
 If a guardrail denies, the callback raises `GuardDenied`, which stops the run (a rule requiring
 approval raises `ApprovalRequired`). Before 0.2.1, LangChain logged the exception and the tool
-ran anyway. The callback evaluates rules and profiles; it does not apply flow control
-(`tools:` / `flow:`).
+ran anyway. Tool calls are evaluated with their arguments, as `tool_call` and `action` events (so
+profile allow/deny lists apply). The callback does not apply flow control (`tools:` /
+`flow:`), redaction, or output rules on tool results.
 
 ---
 

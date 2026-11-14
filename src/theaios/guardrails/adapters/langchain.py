@@ -25,9 +25,11 @@ except ImportError:
 class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc, unused-ignore]
     """LangChain callback that evaluates guardrails at each step.
 
-    Evaluates input guardrails on LLM/tool start, output guardrails on end. A denial raises
-    ``GuardDenied`` and an approval requirement ``ApprovalRequired``: the run stops. It
-    evaluates rules and profiles only, not flow control (``tools:`` / ``flow:``).
+    Evaluates input rules on the prompts sent to the model, output rules on the model's
+    responses, and tool calls (as ``tool_call`` and ``action`` events, with their arguments,
+    so profiles apply) before they run. A denial raises ``GuardDenied`` and an approval
+    requirement ``ApprovalRequired``: the run stops. Not applied by the callback: flow control
+    (``tools:`` / ``flow:``), redaction, and output rules on tool results.
 
     Usage::
 
@@ -86,15 +88,31 @@ class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc, unused-igno
                 raise GuardDenied(decision)
 
     def on_tool_start(self, serialized: dict[str, Any], input_str: str, **kwargs: Any) -> None:
-        tool_name = serialized.get("name", "unknown")
-        decision = self._engine.evaluate(
-            GuardEvent(
-                scope="tool_call",
-                agent=self._agent,
-                data={"tool_name": tool_name, "arguments": {"input": input_str}},
-            )
+        tool_name = str(serialized.get("name", "unknown"))
+        # LangChain passes the parsed arguments as `inputs`; input_str is only their text.
+        inputs = kwargs.get("inputs")
+        arguments: dict[str, Any] = (
+            dict(inputs) if isinstance(inputs, dict) else {"input": input_str}
         )
-        if decision.is_denied and not decision.dry_run:
-            raise GuardDenied(decision)
-        if decision.requires_approval and not decision.dry_run:
-            raise ApprovalRequired(decision)
+        # Evaluated as a tool_call event and as an action event (where profiles apply), like
+        # FlowGuard does; the tool name always wins over an argument called "action".
+        decisions = [
+            self._engine.evaluate(
+                GuardEvent(
+                    scope="tool_call",
+                    agent=self._agent,
+                    data={"tool_name": tool_name, "arguments": arguments},
+                )
+            ),
+            self._engine.evaluate(
+                GuardEvent(
+                    scope="action", agent=self._agent, data={**arguments, "action": tool_name}
+                )
+            ),
+        ]
+        for decision in decisions:
+            if decision.is_denied and not decision.dry_run:
+                raise GuardDenied(decision)
+        for decision in decisions:
+            if decision.requires_approval and not decision.dry_run:
+                raise ApprovalRequired(decision)

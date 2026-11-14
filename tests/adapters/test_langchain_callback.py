@@ -79,3 +79,60 @@ def test_an_allowed_tool_call_runs(tmp_path: Path) -> None:
 
 def test_the_callback_asks_langchain_to_raise() -> None:
     assert GuardrailsCallback.raise_error is True
+
+
+ARGS_POLICY = """
+version: "1.0"
+profiles:
+  support:
+    deny: [wire_money]
+rules:
+  - name: big-refunds
+    scope: tool_call
+    when: tool_name == "refund" and arguments.amount > 100
+    then: deny
+    reason: refunds over 100 need a person
+"""
+
+
+@tool
+def refund_amount(order: str, amount: int) -> str:
+    """Refund an amount."""
+    RAN.append(f"refund:{order}:{amount}")
+    return "refunded"
+
+
+refund_amount.name = "refund"
+
+
+@tool
+def wire_money(to: str) -> str:
+    """Wire money."""
+    RAN.append(f"wire:{to}")
+    return "wired"
+
+
+def _args_cb(tmp_path: Path, agent: str = "support") -> GuardrailsCallback:
+    (tmp_path / "a.yaml").write_text(ARGS_POLICY)
+    return GuardrailsCallback(str(tmp_path / "a.yaml"), agent=agent)
+
+
+def test_rules_see_the_tool_arguments(tmp_path: Path) -> None:
+    RAN.clear()
+    with pytest.raises(GuardDenied):
+        refund_amount.invoke(
+            {"order": "o1", "amount": 500}, config={"callbacks": [_args_cb(tmp_path)]}
+        )
+    assert refund_amount.invoke(
+        {"order": "o2", "amount": 5}, config={"callbacks": [_args_cb(tmp_path)]}
+    )
+    assert RAN == ["refund:o2:5"]
+
+
+def test_profile_deny_lists_apply_to_tool_calls(tmp_path: Path) -> None:
+    RAN.clear()
+    with pytest.raises(GuardDenied):
+        wire_money.invoke({"to": "x"}, config={"callbacks": [_args_cb(tmp_path)]})
+    assert RAN == []
+    assert wire_money.invoke({"to": "y"}, config={"callbacks": [_args_cb(tmp_path, agent="ops")]})
+    assert RAN == ["wire:y"]
