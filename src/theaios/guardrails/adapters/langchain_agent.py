@@ -88,7 +88,8 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
         except BaseException:
             self._after(ready, ran=True)
             raise
-        self._after(ready, ran=not _refused_inside(result))
+        # A tool name the agent does not have never runs (LangChain answers "not a valid tool").
+        self._after(ready, ran=request.tool is not None and not _refused_inside(result))
         return result
 
     async def awrap_tool_call(
@@ -104,7 +105,8 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
         except BaseException:
             self._after(ready, ran=True)
             raise
-        self._after(ready, ran=not _refused_inside(result))
+        # A tool name the agent does not have never runs (LangChain answers "not a valid tool").
+        self._after(ready, ran=request.tool is not None and not _refused_inside(result))
         return result
 
     # ------------------------------------------------------------------------------------

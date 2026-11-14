@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The middleware marked an approved proposal executed before the tool ran: when a check inside it refused the call, or the run paused inside the tool (a sub-agent asking a person), the proposal said executed, a second proposal was opened, and the resumed call was refused. Proposals are now `executing` until the outcome is known.
 - A "no" given by resuming did not record the rejection when the proposal had been approved elsewhere, and that proposal stayed executable out of band.
+- A tool name the agent does not have (the model hallucinated it; LangChain answers "not a valid tool") tainted the session as if an undeclared tool had run.
 - Malformed or mismatched decisions left proposals pending that no run waited for; they are retired, and the refusal names both proposals.
 - Docs: Deep Agents' automatic `general-purpose` sub-agent (all tools, no middleware unless you give it), the built-in tools to declare, several pending approvals (resume by interrupt id, key on `proposal_id`), checkpointer, `pending()` across sessions, the middleware order.
 

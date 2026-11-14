@@ -21,7 +21,7 @@ agent = create_agent(
     tools=[read_inbox, send_email],
     middleware=[FlowMiddleware(guard)],
     checkpointer=InMemorySaver(),   # approval pauses the run: it needs a checkpointer
-    name="assistant",               # the agent name your rules see (as _agent)
+    name="assistant",               # the agent name your rules see (as agent)
 )
 config = {"configurable": {"thread_id": "ticket-4711"}}  # the session: taint is per thread
 ```

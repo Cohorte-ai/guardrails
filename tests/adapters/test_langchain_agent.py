@@ -386,3 +386,19 @@ def test_execute_with_a_langchain_tool_object_does_not_burn_the_approval(tmp_pat
         guard.execute(p.id, {"send_email": send_email})  # a StructuredTool, not callable
     assert guard.proposal(p.id).status == "approved"  # type: ignore[union-attr]
     assert guard.execute(p.id, {"send_email": send_email.func}) == "sent"
+
+
+def test_a_tool_the_agent_does_not_have_does_not_taint_the_session(tmp_path: Path) -> None:
+    (tmp_path / "p.yaml").write_text(POLICY.replace("  undeclared: deny\n", ""))
+    guard = FlowGuard(load_policy(str(tmp_path / "p.yaml")))
+    model = Model(messages=iter([_call("write_todos", "c1"), AIMessage(content="done")]))
+    agent = create_agent(
+        model,
+        [read_calendar],
+        middleware=[FlowMiddleware(guard)],
+        checkpointer=InMemorySaver(),
+        name="assistant",
+    )
+    out = agent.invoke({"messages": [("user", "x")]}, CFG)
+    assert _tool_messages(out)[0].status == "error"  # LangChain: not a valid tool
+    assert guard.labels("t1") == frozenset()
