@@ -10,7 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **LangChain 1.x / Deep Agents middleware** (`theaios.guardrails.adapters.langchain_agent.FlowMiddleware`, extra `langchain-agent`): every tool call is admitted by a `FlowGuard`. Allowed calls run and are observed; denied calls do not run and the model gets an error `ToolMessage` (the run continues; the decision is in its `artifact`); calls needing approval pause the run with a LangGraph `interrupt` carrying the proposal, resumed with `{"proposal_id", "approve", "by"}`. Session = the LangGraph `thread_id`; agent = `agent=` or the graph's name.
-- `FlowGuard.claim(proposal_id, tool, args)`: marks an approved proposal executed for a runner that executes the tool itself, only if the call about to run is exactly the approved one; at most once.
+- `FlowGuard.claim(proposal_id, tool, args, call_id=)`: starts executing an approved proposal for a runner that executes the tool itself, only if the call about to run is exactly the approved one; at most once. With a `call_id` the proposal is `executing` until `finish(ran=...)` makes it `executed` or `superseded`; `executing(session, call_id)` finds it.
+- `FlowGuard.withdraw(proposal_id, by=)`: a person's "no", recorded even over an earlier approval. `FlowGuard.retire(proposal_id, note=)`: closes a proposal nobody waits for.
+- `Proposal.call_id`; proposal statuses `executing` and `superseded`.
+
+### Changed
+
+- **`agent` in rules is the event's agent.** It used to read the event's data, where in `action` and `tool_call` events the model chooses the values: a rule `agent == "assistant"` never fired, and a tool argument named `agent` could make it fire. The event's own fields (`agent`, `_agent`, `_scope`, `_session_id`) now always win over data.
+- `FlowGuard.execute` refuses a registered object that is not callable before marking the proposal executed (a LangChain tool object used to burn the approval; pass `tool.func`).
+
+### Fixed (from the pre-release test, before 0.3.0 shipped)
+
+- The middleware marked an approved proposal executed before the tool ran: when a check inside it refused the call, or the run paused inside the tool (a sub-agent asking a person), the proposal said executed, a second proposal was opened, and the resumed call was refused. Proposals are now `executing` until the outcome is known.
+- A "no" given by resuming did not record the rejection when the proposal had been approved elsewhere, and that proposal stayed executable out of band.
+- Malformed or mismatched decisions left proposals pending that no run waited for; they are retired, and the refusal names both proposals.
+- Docs: Deep Agents' automatic `general-purpose` sub-agent (all tools, no middleware unless you give it), the built-in tools to declare, several pending approvals (resume by interrupt id, key on `proposal_id`), checkpointer, `pending()` across sessions, the middleware order.
 
 ### Deprecated
 

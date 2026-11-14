@@ -123,6 +123,13 @@ If a field doesn't exist, it resolves to `null`. This means you can safely refer
 when: "approval.manager != null"  # True only if the field exists
 ```
 
+Besides the event's data, every rule sees the event's own fields, which data cannot override:
+
+| Field | Value |
+|---|---|
+| `agent` | The agent the event is about (since 0.3; before, `agent` read the data, where in `action` and `tool_call` events the model chooses the values) |
+| `_agent`, `_scope`, `_session_id` | The event's agent, scope and session id |
+
 ### Variables
 
 Variables reference values from the `variables:` section of your policy:

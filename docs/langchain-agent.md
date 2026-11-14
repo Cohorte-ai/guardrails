@@ -39,14 +39,14 @@ codes, reason, proposal id), which is not sent to the model.
 
 ## Approving
 
-When a call needs approval, the run pauses with one interrupt:
+When a call needs approval, the run pauses with an interrupt:
 
 ```python
 out = agent.invoke({"messages": [("user", "answer the customer")]}, config, version="v2")
 ask = out.interrupts[0].value
 # {"type": "theaios.approval", "component": "guardrails", "proposal_id": "...",
-#  "session": "ticket-4711", "tool": "send_email", "args": {...}, "tier": "soft",
-#  "reasons": [{"code": "untrusted_to_send", "message": "..."}]}
+#  "session": "ticket-4711", "agent": "assistant", "tool": "send_email", "args": {...},
+#  "tier": "soft", "reasons": [{"code": "untrusted_to_send", "message": "..."}]}
 ```
 
 Show `tool`, `args` and `reasons` to a person, then resume with their decision:
@@ -59,12 +59,25 @@ agent.invoke(Command(resume={"proposal_id": ask["proposal_id"], "approve": True,
              config, version="v2")
 ```
 
+- **Several pauses at once.** When the model makes parallel tool calls, several interrupts can
+  be pending; LangGraph then needs each decision keyed by its interrupt id:
+  `Command(resume={out.interrupts[0].id: {...decision...}})`, one at a time. An interrupt id can
+  change when a sibling is resumed: key your approval UI on `proposal_id`.
 - The decision must name the proposal and say who decided; `approve` must be `True` or
-  `False` (not the string `"true"`). Anything else is refused and the tool does not run.
-- An approved call runs exactly as proposed, once (`FlowGuard.claim`). A `False` always means
-  the tool does not run, even if someone approved the proposal elsewhere meanwhile.
-- You can also decide out of band (`guard.decide(...)`, for example from an approval
-  dashboard) and then resume with the same decision.
+  `False` (not the string `"true"`). Anything else is refused, the tool does not run, and the
+  proposal is retired (`superseded`) so nothing can approve it later out of context.
+- An approved call runs exactly as proposed, once. While it runs the proposal is `executing`
+  (a run that pauses inside the tool, e.g. a sub-agent asking a person, resumes it without a
+  second approval); then `executed`, or `superseded` if another check inside refused it.
+- A `False` always wins and is recorded (`rejected`, with who said no), even over an approval
+  made elsewhere meanwhile.
+- You can decide out of band (`guard.decide(...)`, from an approval dashboard) and resume with
+  the same decision. `guard.pending()` (no argument) lists what waits across all sessions.
+  Executing out of band (`guard.execute`) runs outside the agent: pass plain functions
+  (`{"send_email": send_email.func}` for a LangChain tool), and note that it bypasses the
+  other middlewares.
+- Approval needs a checkpointer; without one the pause looks normal but cannot be resumed.
+  Resuming a thread with nothing pending does nothing: check `agent.get_state(config).interrupts`.
 - The session stays tainted after an approval: the next send asks again.
 
 ## Who is who
@@ -72,28 +85,58 @@ agent.invoke(Command(resume={"proposal_id": ask["proposal_id"], "approve": True,
 - **Session**: the LangGraph `thread_id` (or `session=lambda request: ...`). A tool call
   without a session is refused.
 - **Agent**: `FlowMiddleware(guard, agent="...")`, or the graph's name (`create_agent(name=...)`,
-  Deep Agents sub-agent names). Rules see it as `_agent`, profiles by name.
+  Deep Agents sub-agent names). Rules see it as `agent` (since 0.3; a tool argument named
+  `agent` cannot change it), profiles by name.
 - The model chooses the tool and its arguments (checked); never the session or the agent.
 
-## Deep Agents sub-agents
+## Deep Agents
 
-Deep Agents does not pass the main agent's middleware to its sub-agents. Add `FlowMiddleware`
-to each sub-agent's `middleware`, sharing the same guard so taint is shared across the thread:
+**Every sub-agent needs the middleware, including the one you did not declare.** Deep Agents
+does not pass the main agent's middleware to its sub-agents, and it adds a `general-purpose`
+sub-agent with **all** the main agent's tools. Left alone, a model can hand any work to it and
+skip every check. Either give it the middleware explicitly or turn it off:
 
 ```python
-subagents = [{"name": "researcher", "description": "...", "tools": [search_web],
-              "middleware": [FlowMiddleware(guard)]}]
-agent = create_deep_agent(model, tools, subagents=subagents, middleware=[FlowMiddleware(guard)],
+governed = [FlowMiddleware(guard)]          # share one guard: taint is per thread
+subagents = [
+    {"name": "researcher", "description": "...", "tools": [search_web], "middleware": governed},
+    {"name": "general-purpose", "description": "General tasks.", "tools": tools,
+     "middleware": governed},                # replaces the automatic one
+]
+agent = create_deep_agent(model, tools, subagents=subagents, middleware=governed,
                           checkpointer=saver, name="assistant")
+```
+
+agent-auth refuses hand-offs (`task`) to sub-agents its A2A rules do not allow, which also
+closes the automatic one by default.
+
+**Built-in tools go through the middleware too**: `task`, `ls`, `read_file`, `write_file`,
+`edit_file`, `delete`, `glob`, `grep` (and `execute` with a sandbox backend). Undeclared tools
+count as sends that return untrusted content, so declare them:
+
+```yaml
+tools:
+  ls: {effect: read}
+  glob: {effect: read}
+  grep: {effect: read, returns: untrusted}       # file contents may carry instructions
+  read_file: {effect: read, returns: untrusted}
+  write_file: {effect: write}
+  edit_file: {effect: write}
+  delete: {effect: write}
+  execute: {effect: send, returns: untrusted}
+  task: {effect: read, returns: untrusted}        # a sub-agent's answer; its own tools are checked inside it
 ```
 
 ## With agent-auth and agent-monitor
 
-The middlewares compose; the first in the list is the outermost:
+The middlewares compose; the first in the list is the outermost. Use this order:
 
 ```python
 middleware=[MonitorMiddleware(monitor), AgentAuthMiddleware(engine), FlowMiddleware(guard)]
 ```
 
-The monitor sees every outcome, authorization decides who may call the tool, flow control
-decides whether the session may call it now.
+The monitor sees every outcome; authorization decides who may call the tool (and keeps its
+separation-of-duties record only if the call ran); flow control decides whether the session
+may call it now, and asks a person last, so nobody approves a call authorization would refuse.
+Enforcement holds in any order; in another order the monitor misses what the middlewares
+outside it decide, and a person may be asked about calls that are then refused.
