@@ -244,3 +244,24 @@ def test_cli_shows_fail_closed_reason_verbatim(tmp_path: Path) -> None:
     event = '{"scope": "action", "agent": "a", "data": {"amount": "10,000"}}'
     result = CliRunner().invoke(main, ["check", "-c", str(path), "-e", event])
     assert "over [cap] [rule could not be evaluated" in result.output.replace("\n", " ")
+
+
+def test_a_rule_on_agent_reads_the_events_agent_not_a_tool_argument(tmp_path: Path) -> None:
+    from theaios.guardrails.engine import Engine
+    from theaios.guardrails.types import GuardEvent
+
+    path = tmp_path / "p.yaml"
+    path.write_text(
+        'version: "1.0"\nrules:\n  - name: no-lookup\n    scope: action\n'
+        '    when: agent == "assistant" and action == "lookup"\n    then: deny\n'
+    )
+    engine = Engine(load_policy(str(path)))
+
+    def decide(who: str, **data: object) -> str:
+        return engine.evaluate(
+            GuardEvent(scope="action", agent=who, data={"action": "lookup", **data})
+        ).outcome
+
+    assert decide("assistant") == "deny"
+    assert decide("assistant", agent="someone-else") == "deny"  # the model cannot unset it
+    assert decide("other", agent="assistant") == "allow"  # nor set it

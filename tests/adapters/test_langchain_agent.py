@@ -241,3 +241,148 @@ def test_claim_checks_the_call_about_to_run(tmp_path: Path) -> None:
     assert guard.claim(p.id, "send_email", {"to": "a", "body": "b"}).status == "executed"
     with pytest.raises(ProposalError, match="executed"):
         guard.claim(p.id, "send_email", {"to": "a", "body": "b"})
+
+
+# --- Round 1 findings (usability test of b07e244) ----------------------------------------------
+
+from langchain.agents.middleware import AgentMiddleware  # noqa: E402
+from langgraph.types import interrupt  # noqa: E402
+
+
+@tool
+def deliver(to: str) -> str:
+    """Send, but ask a person something on the way (a sub-agent pausing inside a tool)."""
+    answer = interrupt({"question": f"confirm the address {to}?"})
+    RAN.append(f"deliver:{to}:{answer}")
+    return "delivered"
+
+
+def _flow_agent(tmp_path: Path, script: list[AIMessage], *inner: Any) -> tuple[Any, FlowGuard]:
+    (tmp_path / "p.yaml").write_text(POLICY.replace("flow:", "  deliver: {effect: send}\nflow:"))
+    guard = FlowGuard(load_policy(str(tmp_path / "p.yaml")))
+    model = Model(messages=iter([*script, AIMessage(content="done")]))
+    agent = create_agent(
+        model,
+        [read_inbox, send_email, deliver],
+        middleware=[FlowMiddleware(guard), *inner],
+        checkpointer=InMemorySaver(),
+        name="assistant",
+    )
+    return agent, guard
+
+
+def test_an_approved_tool_that_pauses_inside_resumes_without_a_second_approval(
+    tmp_path: Path,
+) -> None:
+    agent, guard = _flow_agent(
+        tmp_path, [_call("read_inbox", "c1"), _call("deliver", "c2", to="a@x")]
+    )
+    out = agent.invoke({"messages": [("user", "go")]}, CFG, version="v2")
+    ask = out.interrupts[0].value
+    out = agent.invoke(
+        Command(resume={"proposal_id": ask["proposal_id"], "approve": True, "by": "alice"}),
+        CFG,
+        version="v2",
+    )
+    inner = out.interrupts[0]
+    assert inner.value == {"question": "confirm the address a@x?"}  # the tool's own pause
+    agent.invoke(Command(resume={inner.id: "yes"}), CFG, version="v2")
+    assert RAN == ["read_inbox", "deliver:a@x:yes"]  # the tool got its own answer, ran once
+    statuses = sorted(p.status for p in guard.store.proposals("t1"))
+    assert statuses == ["executed"]  # no stray second proposal
+
+
+class RefuseSends(AgentMiddleware):  # stands in for agent-auth inside FlowMiddleware
+    def _refuse(self, request: Any) -> ToolMessage:
+        return ToolMessage(
+            content="Not authorized",
+            name=request.tool_call["name"],
+            tool_call_id=request.tool_call["id"],
+            status="error",
+            artifact={"theaios": {"component": "agent-auth", "codes": ["deny"]}},
+        )
+
+    def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+        return (
+            self._refuse(request) if request.tool_call["name"] == "send_email" else handler(request)
+        )
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        return (
+            self._refuse(request)
+            if request.tool_call["name"] == "send_email"
+            else await handler(request)
+        )
+
+
+def test_a_call_refused_inside_after_approval_is_not_recorded_as_executed(tmp_path: Path) -> None:
+    agent, guard = _flow_agent(
+        tmp_path,
+        [_call("read_inbox", "c1"), _call("send_email", "c2", to="a@x", body="b")],
+        RefuseSends(),
+    )
+    ask = agent.invoke({"messages": [("user", "go")]}, CFG, version="v2").interrupts[0].value
+    agent.invoke(
+        Command(resume={"proposal_id": ask["proposal_id"], "approve": True, "by": "al"}),
+        CFG,
+        version="v2",
+    )
+    p = guard.proposal(ask["proposal_id"])
+    assert RAN == ["read_inbox"] and p is not None and p.status == "superseded"
+    assert [x.tool for x in guard.store.provenance("t1")] == ["read_inbox"]  # send not observed
+
+
+def test_a_no_over_an_approval_made_elsewhere_is_recorded(tmp_path: Path) -> None:
+    agent, guard, ask = _pause(tmp_path)
+    guard.decide(ask["proposal_id"], approve=True, by="dashboard")
+    agent.invoke(
+        Command(
+            resume={
+                "proposal_id": ask["proposal_id"],
+                "approve": False,
+                "by": "bob",
+                "note": "wrong customer",
+            }
+        ),
+        CFG,
+        version="v2",
+    )
+    p = guard.proposal(ask["proposal_id"])
+    assert p is not None and p.status == "rejected" and p.decided_by == "bob"
+    assert "dashboard" in p.note and "wrong customer" in p.note
+    with pytest.raises(ProposalError):
+        guard.execute(ask["proposal_id"], {"send_email": lambda **kw: RAN.append("leak")})
+    assert RAN == ["read_inbox"]
+
+
+@pytest.mark.parametrize("resume", [{"approve": "true", "by": "x"}, "yes"])
+def test_a_refused_decision_leaves_no_proposal_waiting(tmp_path: Path, resume: Any) -> None:
+    agent, guard, ask = _pause(tmp_path)
+    if isinstance(resume, dict):
+        resume = {**resume, "proposal_id": ask["proposal_id"]}
+    agent.invoke(Command(resume=resume), CFG, version="v2")
+    assert guard.pending() == []
+    p = guard.proposal(ask["proposal_id"])
+    assert p is not None and p.status == "superseded"
+
+
+def test_a_decision_for_another_proposal_names_both(tmp_path: Path) -> None:
+    agent, _, ask = _pause(tmp_path)
+    out = agent.invoke(
+        Command(resume={"proposal_id": "other", "approve": True, "by": "x"}), CFG, version="v2"
+    )
+    reason = _tool_messages(out)[-1].content
+    assert "'other'" in reason and ask["proposal_id"] in reason
+
+
+def test_execute_with_a_langchain_tool_object_does_not_burn_the_approval(tmp_path: Path) -> None:
+    (tmp_path / "p.yaml").write_text(POLICY)
+    guard = FlowGuard(load_policy(str(tmp_path / "p.yaml")))
+    guard.observe("s", "read_inbox")
+    p = guard.admit("s", "send_email", {"to": "a", "body": "b"}).proposal
+    assert p is not None
+    guard.decide(p.id, approve=True, by="alice")
+    with pytest.raises(ProposalError, match="tool.func"):
+        guard.execute(p.id, {"send_email": send_email})  # a StructuredTool, not callable
+    assert guard.proposal(p.id).status == "approved"  # type: ignore[union-attr]
+    assert guard.execute(p.id, {"send_email": send_email.func}) == "sent"

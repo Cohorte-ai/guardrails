@@ -61,10 +61,12 @@ class Proposal:
     reasons: list[Denial]
     tier: str
     created_at: float
-    status: str = "pending"  # pending | approved | rejected | executed
+    status: str = "pending"  # pending | approved | rejected | executing | executed | superseded
     decided_by: str | None = None
     decided_at: float | None = None
     note: str = ""
+    # The tool call an approved proposal is executing for (a framework runner, see claim()).
+    call_id: str | None = None
 
 
 @dataclass

@@ -20,14 +20,16 @@ the agent.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from theaios.guardrails.flow.guard import FlowGuard
-from theaios.guardrails.flow.types import Admission, ProposalError, Verdict
+from theaios.guardrails.flow.types import Admission, Proposal, ProposalError, Verdict
 
 try:
     from langchain.agents.middleware import AgentMiddleware, ToolCallRequest
     from langchain_core.messages import ToolMessage
+    from langgraph.errors import GraphBubbleUp
     from langgraph.types import Command, interrupt
 except ImportError as e:  # pragma: no cover - exercised only without the extra
     raise ImportError(
@@ -79,11 +81,15 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
         ready = self._before(request)
         if isinstance(ready, ToolMessage):
             return ready
-        session, tool, call_id = ready
         try:
-            return handler(request)
-        finally:
-            self._guard.observe(session, tool, call_id=call_id)
+            result = handler(request)
+        except GraphBubbleUp:  # paused inside the tool (or LangGraph control flow): not done
+            raise
+        except BaseException:
+            self._after(ready, ran=True)
+            raise
+        self._after(ready, ran=not _refused_inside(result))
+        return result
 
     async def awrap_tool_call(
         self, request: ToolCallRequest, handler: AsyncHandler
@@ -91,17 +97,30 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
         ready = self._before(request)
         if isinstance(ready, ToolMessage):
             return ready
-        session, tool, call_id = ready
         try:
-            return await handler(request)
-        finally:
-            self._guard.observe(session, tool, call_id=call_id)
+            result = await handler(request)
+        except GraphBubbleUp:
+            raise
+        except BaseException:
+            self._after(ready, ran=True)
+            raise
+        self._after(ready, ran=not _refused_inside(result))
+        return result
 
     # ------------------------------------------------------------------------------------
 
-    def _before(self, request: ToolCallRequest) -> ToolMessage | tuple[str, str, str]:
-        """Admit the call. Returns a refusal to give the model, or (session, tool, call id)
-        when the tool may run now. May pause the run for approval (``interrupt``)."""
+    def _after(self, ready: _Ready, *, ran: bool) -> None:
+        """Record the outcome: a call that ran is observed (taint) and its proposal executed;
+        a call another check refused inside did not run (not observed, proposal superseded)."""
+        if ran:
+            self._guard.observe(ready.session, ready.tool, call_id=ready.call_id or None)
+        if ready.proposal_id:
+            note = "" if ran else "approved, but refused by another check before it ran"
+            self._guard.finish(ready.proposal_id, ran=ran, note=note)
+
+    def _before(self, request: ToolCallRequest) -> ToolMessage | _Ready:
+        """Admit the call. Returns a refusal to give the model, or what to record once the
+        tool ran. May pause the run for approval (``interrupt``)."""
         call = request.tool_call
         tool, args, call_id = str(call["name"]), call.get("args") or {}, str(call.get("id") or "")
         session = self._session_of(request)
@@ -114,13 +133,39 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
             )
         if not isinstance(args, Mapping):
             return _refusal(call, "tool arguments must be an object", codes=["bad_arguments"])
+        args = dict(args)
+
+        # The run paused inside this very call after it was approved and claimed (a
+        # sub-agent asked a person too): it resumes, it does not need a second approval.
+        if call_id:
+            claimed = self._guard.executing(session, call_id)
+            if claimed is not None:
+                if claimed.tool != tool or claimed.args != args:
+                    return _refusal(
+                        call,
+                        f"proposal {claimed.id} is executing for other arguments",
+                        codes=["proposal"],
+                    )
+                # LangGraph matches resume values to interrupt() calls by order: take this
+                # call's slot again (it returns the decision already given, without pausing),
+                # or an interrupt inside the tool would receive our decision as its own.
+                resumed = interrupt(self._ask(claimed, session, request))
+                if _check_decision(resumed, claimed.id) or not resumed["approve"]:
+                    self._guard.finish(claimed.id, ran=False, note="the resumed decision changed")
+                    return _refusal(
+                        call,
+                        f"proposal {claimed.id}: the resumed run does not carry its approval",
+                        codes=["bad_decision"],
+                    )
+                return _Ready(session, tool, call_id, claimed.id)
+
         try:
-            admission = self._guard.admit(session, tool, dict(args), agent=self._agent_of(request))
+            admission = self._guard.admit(session, tool, args, agent=self._agent_of(request))
         except (TypeError, ValueError) as exc:  # arguments that are not plain JSON
             return _refusal(call, f"arguments refused: {exc}", codes=["bad_arguments"])
 
         if admission.verdict is Verdict.ALLOW:
-            return session, tool, call_id
+            return _Ready(session, tool, call_id, None)
         if admission.verdict is Verdict.DENY or admission.proposal is None:
             return _refusal(call, _reasons_text(admission), admission=admission)
 
@@ -128,61 +173,58 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
         # admit() answers with the same pending proposal, and interrupt() then returns the
         # decision instead of pausing.
         proposal = admission.proposal
-        decision = interrupt(
-            {
-                "type": APPROVAL_TYPE,
-                "component": COMPONENT,
-                "proposal_id": proposal.id,
-                "session": session,
-                "tool": tool,
-                "args": proposal.args,
-                "tier": proposal.tier,
-                "reasons": [{"code": r.code.value, "message": r.message} for r in proposal.reasons],
-            }
-        )
+        decision = interrupt(self._ask(proposal, session, request))
         problem = _check_decision(decision, proposal.id)
         if problem:
+            # The run moves on without this call: nobody waits for this proposal any more.
+            self._guard.retire(proposal.id, note=f"the run moved on: {problem}")
             return _refusal(call, problem, admission=admission, codes=["bad_decision"])
         assert isinstance(decision, Mapping)
-        current = self._guard.proposal(proposal.id)
-        if not decision["approve"]:
-            # A "no" always means no, even if the proposal was approved elsewhere meanwhile.
-            if current is not None and current.status == "pending":
-                current = self._guard.decide(
-                    proposal.id,
-                    approve=False,
-                    by=decision["by"],
-                    note=str(decision.get("note") or ""),
-                )
-            note = f": {decision.get('note')}" if decision.get("note") else ""
-            return _refusal(
-                call,
-                f"proposal {proposal.id} rejected by {decision['by']}{note}",
-                admission=admission,
-                codes=["rejected"],
-            )
+        by, note = decision["by"], str(decision.get("note") or "")
         try:
-            if current is not None and current.status == "pending":
-                current = self._guard.decide(
-                    proposal.id,
-                    approve=decision["approve"],
-                    by=decision["by"],
-                    note=str(decision.get("note") or ""),
+            if not decision["approve"]:
+                # A "no" always means no, and is recorded, even over an approval made elsewhere.
+                current = self._guard.proposal(proposal.id)
+                if current is not None and current.status in ("pending", "approved"):
+                    self._guard.withdraw(proposal.id, by=by, note=note)
+                suffix = f": {note}" if note else ""
+                return _refusal(
+                    call,
+                    f"proposal {proposal.id} rejected by {by}{suffix}",
+                    admission=admission,
+                    codes=["rejected"],
                 )
+            current = self._guard.proposal(proposal.id)
+            if current is not None and current.status == "pending":
+                current = self._guard.decide(proposal.id, approve=True, by=by, note=note)
             if current is None or current.status != "approved":
                 status = current.status if current is not None else "unknown"
                 who = f" by {current.decided_by}" if current and current.decided_by else ""
-                note = f": {current.note}" if current and current.note else ""
+                why = f": {current.note}" if current and current.note else ""
                 return _refusal(
                     call,
-                    f"proposal {proposal.id} {status}{who}{note}",
+                    f"proposal {proposal.id} {status}{who}{why}",
                     admission=admission,
                     codes=[status],
                 )
-            self._guard.claim(proposal.id, tool, dict(args))
+            self._guard.claim(proposal.id, tool, args, call_id=call_id or None)
         except ProposalError as exc:
             return _refusal(call, str(exc), admission=admission, codes=["proposal"])
-        return session, tool, call_id
+        return _Ready(session, tool, call_id, proposal.id if call_id else None)
+
+    def _ask(self, proposal: Proposal, session: str, request: ToolCallRequest) -> dict[str, object]:
+        """The interrupt payload: everything a person (or an approval UI) needs."""
+        return {
+            "type": APPROVAL_TYPE,
+            "component": COMPONENT,
+            "proposal_id": proposal.id,
+            "session": session,
+            "agent": self._agent_of(request),
+            "tool": proposal.tool,
+            "args": proposal.args,
+            "tier": proposal.tier,
+            "reasons": [{"code": r.code.value, "message": r.message} for r in proposal.reasons],
+        }
 
     def _session_of(self, request: ToolCallRequest) -> str:
         if self._session is not None:
@@ -199,6 +241,25 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
         return str(name) if name else "default"
 
 
+@dataclass(frozen=True)
+class _Ready:
+    """A call cleared to run, and what to record once it did."""
+
+    session: str
+    tool: str
+    call_id: str
+    proposal_id: str | None
+
+
+def _refused_inside(result: object) -> bool:
+    """Did another theaios check inside this one refuse the call (so the tool did not run)?"""
+    if not (isinstance(result, ToolMessage) and result.status == "error"):
+        return False
+    artifact = result.artifact if isinstance(result.artifact, Mapping) else {}
+    detail = artifact.get("theaios")
+    return isinstance(detail, Mapping) and detail.get("component") != COMPONENT
+
+
 def _check_decision(decision: object, proposal_id: str) -> str:
     """Why a resume value is not a usable decision for this proposal ('' if it is)."""
     if not isinstance(decision, Mapping):
@@ -207,7 +268,11 @@ def _check_decision(decision: object, proposal_id: str) -> str:
             "'approve': True|False, 'by': '<who>'}"
         )
     if decision.get("proposal_id") != proposal_id:
-        return f"the decision does not name proposal {proposal_id}"
+        named = decision.get("proposal_id")
+        return (
+            f"the decision is for proposal {named!r}, but this call waits for proposal "
+            f"{proposal_id}"
+        )
     if type(decision.get("approve")) is not bool:
         return "the decision's 'approve' must be true or false"
     by = decision.get("by")
