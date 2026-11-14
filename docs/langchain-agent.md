@@ -61,8 +61,9 @@ agent.invoke(Command(resume={"proposal_id": ask["proposal_id"], "approve": True,
 
 - **Several pauses at once.** When the model makes parallel tool calls, several interrupts can
   be pending; LangGraph then needs each decision keyed by its interrupt id:
-  `Command(resume={out.interrupts[0].id: {...decision...}})`, one at a time. An interrupt id can
-  change when a sibling is resumed: key your approval UI on `proposal_id`.
+  `Command(resume={i.id: decision for i in out.interrupts})` (all at once, or one at a time).
+  An interrupt id can change when a sibling is resumed: key your approval UI on `proposal_id`.
+  Two calls the model made identical share one proposal, and one approval runs one of them.
 - The decision must name the proposal and say who decided; `approve` must be `True` or
   `False` (not the string `"true"`). Anything else is refused, the tool does not run, and the
   proposal is retired (`superseded`) so nothing can approve it later out of context.
@@ -79,6 +80,9 @@ agent.invoke(Command(resume={"proposal_id": ask["proposal_id"], "approve": True,
 - Approval needs a checkpointer; without one the pause looks normal but cannot be resumed.
   Resuming a thread with nothing pending does nothing: check `agent.get_state(config).interrupts`.
 - The session stays tainted after an approval: the next send asks again.
+- A run you abandon leaves its proposal `pending`: `guard.retire(proposal_id, note=...)` closes
+  it (so a dashboard cannot approve it later, out of context). A process that died while a tool
+  ran leaves it `executing`: `guard.finish(proposal_id, ran=False, note="abandoned")`.
 
 ## Who is who
 

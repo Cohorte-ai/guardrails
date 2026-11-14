@@ -23,6 +23,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from theaios.core.marks import is_marked, mark
+
 from theaios.guardrails.flow.guard import FlowGuard
 from theaios.guardrails.flow.types import Admission, Proposal, ProposalError, Verdict
 
@@ -139,8 +141,12 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
 
         # The run paused inside this very call after it was approved and claimed (a
         # sub-agent asked a person too): it resumes, it does not need a second approval.
-        if call_id:
-            claimed = self._guard.executing(session, call_id)
+        # The claim is keyed on the LangGraph task (stable across this call's pause and
+        # resume, distinct for every call), never on the call id the model chose: two calls
+        # with the same id must not share one approval.
+        claim_key = _task_key(request) or call_id
+        if claim_key:
+            claimed = self._guard.executing(session, claim_key)
             if claimed is not None:
                 if claimed.tool != tool or claimed.args != args:
                     return _refusal(
@@ -153,7 +159,12 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
                 # or an interrupt inside the tool would receive our decision as its own.
                 resumed = interrupt(self._ask(claimed, session, request))
                 if _check_decision(resumed, claimed.id) or not resumed["approve"]:
-                    self._guard.finish(claimed.id, ran=False, note="the resumed decision changed")
+                    who = resumed.get("by") if isinstance(resumed, Mapping) else None
+                    self._guard.finish(
+                        claimed.id,
+                        ran=False,
+                        note=f"the resumed decision changed{f' (by {who})' if who else ''}",
+                    )
                     return _refusal(
                         call,
                         f"proposal {claimed.id}: the resumed run does not carry its approval",
@@ -209,10 +220,10 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
                     admission=admission,
                     codes=[status],
                 )
-            self._guard.claim(proposal.id, tool, args, call_id=call_id or None)
+            self._guard.claim(proposal.id, tool, args, call_id=claim_key or None)
         except ProposalError as exc:
             return _refusal(call, str(exc), admission=admission, codes=["proposal"])
-        return _Ready(session, tool, call_id, proposal.id if call_id else None)
+        return _Ready(session, tool, call_id, proposal.id if claim_key else None)
 
     def _ask(self, proposal: Proposal, session: str, request: ToolCallRequest) -> dict[str, object]:
         """The interrupt payload: everything a person (or an approval UI) needs."""
@@ -220,6 +231,7 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
             "type": APPROVAL_TYPE,
             "component": COMPONENT,
             "proposal_id": proposal.id,
+            "tool_call_id": str(request.tool_call.get("id") or ""),
             "session": session,
             "agent": self._agent_of(request),
             "tool": proposal.tool,
@@ -253,13 +265,23 @@ class _Ready:
     proposal_id: str | None
 
 
+def _task_key(request: ToolCallRequest) -> str:
+    info = getattr(request.runtime, "execution_info", None)
+    task = getattr(info, "task_id", None)
+    return f"task:{task}" if task else ""
+
+
 def _refused_inside(result: object) -> bool:
     """Did another theaios check inside this one refuse the call (so the tool did not run)?"""
     if not (isinstance(result, ToolMessage) and result.status == "error"):
         return False
     artifact = result.artifact if isinstance(result.artifact, Mapping) else {}
     detail = artifact.get("theaios")
-    return isinstance(detail, Mapping) and detail.get("component") != COMPONENT
+    return (
+        isinstance(detail, Mapping)
+        and is_marked(detail.get("mark"))
+        and detail.get("component") != COMPONENT
+    )
 
 
 def _check_decision(decision: object, proposal_id: str) -> str:
@@ -296,6 +318,7 @@ def _refusal(
 ) -> ToolMessage:
     """What the model sees instead of the tool's result; the decision rides in ``artifact``."""
     detail: dict[str, object] = {
+        "mark": mark(),  # unforgeable: content a tool returns cannot pass for a refusal
         "component": COMPONENT,
         "verdict": "deny",
         "codes": codes
