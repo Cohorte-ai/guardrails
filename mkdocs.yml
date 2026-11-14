@@ -58,6 +58,7 @@ nav:
       - Expression Language: expressions.md
   - Guides:
       - Flow Control: flow-control.md
+      - LangChain Agents: langchain-agent.md
       - Matchers: matchers.md
       - Integration Guide: integration.md
       - Generate Policies with AI: ai-policy-generator.md

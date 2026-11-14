@@ -5,6 +5,17 @@ All notable changes to theaios-guardrails will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- **LangChain 1.x / Deep Agents middleware** (`theaios.guardrails.adapters.langchain_agent.FlowMiddleware`, extra `langchain-agent`): every tool call is admitted by a `FlowGuard`. Allowed calls run and are observed; denied calls do not run and the model gets an error `ToolMessage` (the run continues; the decision is in its `artifact`); calls needing approval pause the run with a LangGraph `interrupt` carrying the proposal, resumed with `{"proposal_id", "approve", "by"}`. Session = the LangGraph `thread_id`; agent = `agent=` or the graph's name.
+- `FlowGuard.claim(proposal_id, tool, args)`: marks an approved proposal executed for a runner that executes the tool itself, only if the call about to run is exactly the approved one; at most once.
+
+### Deprecated
+
+- `GuardrailsCallback` (LangChain callback): it can only raise, which aborts a LangChain 1.x agent run, and cannot pause for approval. Emits a `FutureWarning`; use `FlowMiddleware`.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

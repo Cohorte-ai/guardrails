@@ -14,7 +14,7 @@ from theaios.guardrails.engine import Engine
 from theaios.guardrails.types import GuardEvent
 
 try:
-    from langchain_core.callbacks import BaseCallbackHandler  # type: ignore[import-not-found]
+    from langchain_core.callbacks import BaseCallbackHandler  # type: ignore[import-not-found, unused-ignore]
 except ImportError:
     raise ImportError(
         "LangChain adapter requires langchain-core. "
@@ -22,7 +22,7 @@ except ImportError:
     )
 
 
-class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc]
+class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc, unused-ignore]
     """LangChain callback that evaluates guardrails at each step.
 
     Evaluates input guardrails on LLM/tool start, output guardrails on end.
@@ -43,6 +43,15 @@ class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc]
         dry_run: bool = False,
     ) -> None:
         super().__init__()
+        import warnings
+
+        warnings.warn(
+            "GuardrailsCallback (a callback) cannot stop a tool call cleanly or pause for "
+            "approval. For LangChain 1.x agents use "
+            "theaios.guardrails.adapters.langchain_agent.FlowMiddleware.",
+            FutureWarning,
+            stacklevel=2,
+        )
         policy = load_policy(policy_path)
         self._engine = Engine(policy, dry_run=dry_run)
         self._agent = agent

@@ -443,6 +443,31 @@ class FlowGuard:
         finally:
             self.observe(p.session_id, p.tool, call_id=p.id)
 
+    def claim(self, proposal_id: str, tool: str, args: Mapping[str, object]) -> Proposal:
+        """Mark an approved proposal executed, for a runner that executes the tool itself
+        (a framework's tool node). The call about to run must be exactly the approved one:
+        same tool, same arguments. At most once. The caller then runs the tool and
+        :meth:`observe` s it, even if it raises."""
+        digest = args_digest(tool, dict(args))  # also refuses arguments that are not JSON
+        with self._store.lock:
+            p = self._store.get_proposal(proposal_id)
+            if p is None:
+                raise ProposalError(f"unknown proposal {proposal_id}")
+            if p.status != "approved":
+                raise ProposalError(f"proposal {proposal_id} is {p.status}, not approved")
+            if not p.decided_by or p.decided_at is None:
+                raise ProposalError(f"proposal {proposal_id} has no recorded decision")
+            if args_digest(p.tool, p.args) != p.digest:
+                raise ProposalError(f"proposal {proposal_id}: stored arguments were altered")
+            if p.tool != tool or p.digest != digest:
+                raise ProposalError(
+                    f"proposal {proposal_id} approved '{p.tool}' with other arguments than "
+                    f"the '{tool}' call about to run"
+                )
+            p.status = "executed"  # marked before running: at most once, even if it fails
+            self._store.update_proposal(p)
+            return copy.deepcopy(p)
+
     # Convenience -----------------------------------------------------------------------
 
     def call(
