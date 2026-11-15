@@ -25,7 +25,7 @@ from typing import Any
 
 from theaios.core.marks import is_marked, mark
 
-from theaios.guardrails.flow.guard import FlowGuard
+from theaios.guardrails.flow.guard import MAX_ID, FlowGuard
 from theaios.guardrails.flow.types import Admission, Proposal, ProposalError, Verdict
 
 try:
@@ -127,6 +127,10 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
         tool ran. May pause the run for approval (``interrupt``)."""
         call = request.tool_call
         tool, args, call_id = str(call["name"]), call.get("args") or {}, str(call.get("id") or "")
+        if len(tool) > MAX_ID:  # no real tool has such a name; the model chose it
+            return _refusal(
+                call, f"tool name longer than {MAX_ID} characters", codes=["bad_tool_name"]
+            )
         session = self._session_of(request)
         if not session:
             return _refusal(
@@ -330,7 +334,7 @@ def _refusal(
         detail["proposal_id"] = admission.proposal.id
     return ToolMessage(
         content=f"Blocked by guardrails: {message}",
-        name=str(call.get("name") or ""),
+        name=str(call.get("name") or "")[:MAX_ID],
         tool_call_id=str(call.get("id") or ""),
         status="error",
         artifact={"theaios": detail},

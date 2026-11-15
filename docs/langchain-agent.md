@@ -35,7 +35,10 @@ config = {"configurable": {"thread_id": "ticket-4711"}}  # the session: taint is
 | approval required | does not run yet | nothing yet | pauses (`interrupt`) |
 
 A denial's structured decision is in the `ToolMessage`'s `artifact["theaios"]` (component,
-codes, reason, proposal id), which is not sent to the model.
+codes, reason, proposal id), which is not sent to the model. It carries a per-process mark so
+the theaios middlewares can tell a real refusal from a tool result imitating one; a tool should
+never return an earlier message's artifact (read from the agent state) as its own result.
+Tool names longer than 200 characters are refused, and stored call ids are capped.
 
 ## Approving
 

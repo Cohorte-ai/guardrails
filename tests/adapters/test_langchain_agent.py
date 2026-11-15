@@ -465,3 +465,30 @@ def test_two_calls_with_the_same_id_never_share_one_approval(tmp_path: Path) -> 
     decision = {"proposal_id": asks[0].value["proposal_id"], "approve": True, "by": "alice"}
     agent.invoke(Command(resume={i.id: decision for i in asks}), CFG, version="v2")  # all at once
     assert RAN.count("slow_send:a@x") == 1
+
+
+# --- Round 3 findings (re-verification of 1957c63) ---------------------------------------------
+
+
+def test_model_chosen_names_and_ids_are_not_stored_whole(tmp_path: Path) -> None:
+    from theaios.guardrails.flow import FileStore
+
+    (tmp_path / "p.yaml").write_text(POLICY)
+    store = FileStore(tmp_path / "flow.log")
+    guard = FlowGuard(load_policy(str(tmp_path / "p.yaml")), store=store)
+    script = [
+        _call("read_inbox", "i" * 300_000),
+        AIMessage(content="", tool_calls=[{"name": "x" * 300_000, "args": {}, "id": "c2"}]),
+    ]
+    model = Model(messages=iter([*script, AIMessage(content="done")]))
+    agent = create_agent(
+        model,
+        [read_inbox],
+        middleware=[FlowMiddleware(guard)],
+        checkpointer=InMemorySaver(),
+        name="assistant",
+    )
+    out = agent.invoke({"messages": [("user", "x")]}, CFG)
+    assert _tool_messages(out)[-1].artifact["theaios"]["codes"] == ["bad_tool_name"]
+    store.close()
+    assert max(len(line) for line in (tmp_path / "flow.log").read_text().splitlines()) < 5000

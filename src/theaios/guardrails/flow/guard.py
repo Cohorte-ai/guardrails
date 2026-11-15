@@ -47,6 +47,7 @@ T = TypeVar("T")
 _TIER_RANK = {"autonomous": 0, "soft": 1, "strong": 2}
 _EFFECT_RANK = {Effect.READ: 0, Effect.WRITE: 1, Effect.SEND: 2}
 MAX_ARGS_BYTES = 1_000_000
+MAX_ID = 200
 
 
 def args_digest(tool: str, args: Mapping[str, object]) -> str:
@@ -173,7 +174,9 @@ class FlowGuard:
         error: its message can carry the same content). ``call``, the ``tool`` decorator and
         ``execute`` do it for you. Returns the labels added."""
         spec, _ = self._effective(tool)
-        cid = call_id or uuid.uuid4().hex[:12]
+        # Call ids (and undeclared tool names) can come from the model: cap what is stored.
+        cid = (call_id or uuid.uuid4().hex[:12])[:MAX_ID]
+        tool = tool[:MAX_ID]
         now = time.time()
         added = sorted(spec.returns, key=lambda label: label.value)
         for label in added:
