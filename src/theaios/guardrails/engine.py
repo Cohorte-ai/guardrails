@@ -106,6 +106,9 @@ class Engine:
 
         # 3. Build evaluation context
         context = dict(event.data)
+        # The event's own fields win over its data: in action and tool_call events the data
+        # holds tool arguments the model chose, so a rule on `agent` must not read one.
+        context["agent"] = event.agent
         context["_agent"] = event.agent
         context["_scope"] = event.scope
         context["_session_id"] = event.session_id

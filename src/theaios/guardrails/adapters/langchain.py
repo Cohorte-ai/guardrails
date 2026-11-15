@@ -51,6 +51,15 @@ class GuardrailsCallback(BaseCallbackHandler):  # type: ignore[misc, unused-igno
         dry_run: bool = False,
     ) -> None:
         super().__init__()
+        import warnings
+
+        warnings.warn(
+            "GuardrailsCallback (a callback) cannot stop a tool call cleanly or pause for "
+            "approval. For LangChain 1.x agents use "
+            "theaios.guardrails.adapters.langchain_agent.FlowMiddleware.",
+            FutureWarning,
+            stacklevel=2,
+        )
         policy = load_policy(policy_path)
         self._engine = Engine(policy, dry_run=dry_run)
         self._agent = agent

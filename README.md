@@ -34,7 +34,7 @@ Write AI agent governance policies in YAML. The engine evaluates every agent act
 - **Cross-agent rules** — govern A2A communication
 - **Built-in matchers** — regex, keyword lists, PII detection with redaction
 - **Extensible** — custom matchers via `@register_matcher` plugin system
-- **Framework adapters** — LangChain, OpenAI Agents SDK, or any platform via `@guard` decorator
+- **Framework adapters** — LangChain 1.x / Deep Agents middleware (blocks, pauses for approval), OpenAI Agents SDK, or any platform via `@guard` decorator
 - **Audit log** — JSONL trail of every evaluation, feeds into any observability stack
 - **Flow control (0.2)** — tools declare what they read, write and send; once a session has read untrusted content or sensitive data, writes and sends wait for a person's approval of the exact call. Measured on an inbox assistant: 64–65 exfiltration emails without it, 0 with it. See [Flow control](#flow-control)
 - **Grounded numbers** — flag figures in generated text that no source contains

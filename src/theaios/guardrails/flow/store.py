@@ -102,6 +102,7 @@ class MemoryStore:
                     "decided_by": proposal.decided_by,
                     "decided_at": proposal.decided_at,
                     "note": proposal.note,
+                    "call_id": proposal.call_id,
                 }
             )
             self._proposals[proposal.id] = copy.deepcopy(proposal)
@@ -335,6 +336,8 @@ class FileStore(MemoryStore):
                 p.decided_by = cast("str | None", e.get("decided_by"))
                 p.decided_at = cast("float | None", e.get("decided_at"))
                 p.note = str(e.get("note") or "")
+                call_id = e.get("call_id")
+                p.call_id = str(call_id) if call_id is not None else None
 
 
 def _create_private(path: Path) -> None:
@@ -391,4 +394,5 @@ def _proposal_from(e: dict[str, object]) -> Proposal:
         decided_by=cast("str | None", e.get("decided_by")),
         decided_at=cast("float | None", e.get("decided_at")),
         note=str(e.get("note") or ""),
+        call_id=str(e["call_id"]) if e.get("call_id") is not None else None,
     )

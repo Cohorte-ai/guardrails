@@ -47,6 +47,7 @@ T = TypeVar("T")
 _TIER_RANK = {"autonomous": 0, "soft": 1, "strong": 2}
 _EFFECT_RANK = {Effect.READ: 0, Effect.WRITE: 1, Effect.SEND: 2}
 MAX_ARGS_BYTES = 1_000_000
+MAX_ID = 200
 
 
 def args_digest(tool: str, args: Mapping[str, object]) -> str:
@@ -173,7 +174,9 @@ class FlowGuard:
         error: its message can carry the same content). ``call``, the ``tool`` decorator and
         ``execute`` do it for you. Returns the labels added."""
         spec, _ = self._effective(tool)
-        cid = call_id or uuid.uuid4().hex[:12]
+        # Call ids (and undeclared tool names) can come from the model: cap what is stored.
+        cid = (call_id or uuid.uuid4().hex[:12])[:MAX_ID]
+        tool = tool[:MAX_ID]
         now = time.time()
         added = sorted(spec.returns, key=lambda label: label.value)
         for label in added:
@@ -433,6 +436,11 @@ class FlowGuard:
                     f"proposal {proposal_id} is for '{p.tool}', which is not in the tools "
                     "you passed"
                 )
+            if not callable(fn):
+                raise ProposalError(
+                    f"proposal {proposal_id}: the function registered for '{p.tool}' is not "
+                    f"callable ({type(fn).__name__}); for a LangChain tool pass tool.func"
+                )
             if args_digest(p.tool, p.args) != p.digest:
                 raise ProposalError(f"proposal {proposal_id}: stored arguments were altered")
             # Marked before running: at most once, even if the call fails.
@@ -442,6 +450,102 @@ class FlowGuard:
             return fn(**json.loads(json.dumps(p.args)))
         finally:
             self.observe(p.session_id, p.tool, call_id=p.id)
+
+    def claim(
+        self,
+        proposal_id: str,
+        tool: str,
+        args: Mapping[str, object],
+        *,
+        call_id: str | None = None,
+    ) -> Proposal:
+        """Start executing an approved proposal, for a runner that executes the tool itself
+        (a framework's tool node). The call about to run must be exactly the approved one:
+        same tool, same arguments. At most once.
+
+        Without ``call_id`` the proposal is ``executed`` at once. With it, it is ``executing``
+        for that tool call until :meth:`finish`: the same call can resume (its run paused
+        inside the tool), and nothing else can claim it. The caller then runs the tool,
+        :meth:`observe` s it (even if it raises) and calls :meth:`finish`."""
+        digest = args_digest(tool, dict(args))  # also refuses arguments that are not JSON
+        with self._store.lock:
+            p = self._approved(proposal_id)
+            if p.tool != tool or p.digest != digest:
+                raise ProposalError(
+                    f"proposal {proposal_id} approved '{p.tool}' with other arguments than "
+                    f"the '{tool}' call about to run"
+                )
+            # Marked before running: at most once, even if it fails.
+            p.status = "executing" if call_id else "executed"
+            p.call_id = call_id
+            self._store.update_proposal(p)
+            return copy.deepcopy(p)
+
+    def executing(self, session_id: str, call_id: str) -> Proposal | None:
+        """The proposal a tool call claimed and has not finished (its run paused inside the
+        tool), or None."""
+        for p in self._store.proposals(session_id):
+            if p.status == "executing" and p.call_id == call_id:
+                return copy.deepcopy(p)
+        return None
+
+    def finish(self, proposal_id: str, *, ran: bool, note: str = "") -> Proposal:
+        """End an ``executing`` proposal: ``executed`` if the tool ran (even if it failed),
+        ``superseded`` if it did not run after all (another check refused it)."""
+        with self._store.lock:
+            p = self._store.get_proposal(proposal_id)
+            if p is None:
+                raise ProposalError(f"unknown proposal {proposal_id}")
+            if p.status != "executing":
+                raise ProposalError(f"proposal {proposal_id} is {p.status}, not executing")
+            p.status = "executed" if ran else "superseded"
+            if note:
+                p.note = note
+            self._store.update_proposal(p)
+            return copy.deepcopy(p)
+
+    def withdraw(self, proposal_id: str, *, by: str, note: str = "") -> Proposal:
+        """A person says no, even to a proposal approved earlier (by someone else, or out of
+        band): it becomes ``rejected`` and can never run. Not once it started executing."""
+        if not isinstance(by, str) or not by.strip():
+            raise ValueError("withdraw() needs who decided")
+        with self._store.lock:
+            p = self._store.get_proposal(proposal_id)
+            if p is None:
+                raise ProposalError(f"unknown proposal {proposal_id}")
+            if p.status not in ("pending", "approved", "rejected"):
+                raise ProposalError(f"proposal {proposal_id} was already {p.status}")
+            if p.status == "approved":
+                note = f"approval by {p.decided_by} withdrawn" + (f": {note}" if note else "")
+            p.status = "rejected"
+            p.decided_by, p.decided_at, p.note = by, time.time(), note
+            self._store.update_proposal(p)
+            return copy.deepcopy(p)
+
+    def retire(self, proposal_id: str, *, note: str) -> Proposal | None:
+        """Close a proposal no run waits for any more (``superseded``), so it cannot be
+        approved and executed later out of context. A no-op once decided against, executing
+        or executed; returns the proposal, or None if unknown."""
+        with self._store.lock:
+            p = self._store.get_proposal(proposal_id)
+            if p is None:
+                return None
+            if p.status in ("pending", "approved"):
+                p.status, p.note = "superseded", note
+                self._store.update_proposal(p)
+            return copy.deepcopy(p)
+
+    def _approved(self, proposal_id: str) -> Proposal:
+        p = self._store.get_proposal(proposal_id)
+        if p is None:
+            raise ProposalError(f"unknown proposal {proposal_id}")
+        if p.status != "approved":
+            raise ProposalError(f"proposal {proposal_id} is {p.status}, not approved")
+        if not p.decided_by or p.decided_at is None:
+            raise ProposalError(f"proposal {proposal_id} has no recorded decision")
+        if args_digest(p.tool, p.args) != p.digest:
+            raise ProposalError(f"proposal {proposal_id}: stored arguments were altered")
+        return p
 
     # Convenience -----------------------------------------------------------------------
 

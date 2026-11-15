@@ -118,6 +118,11 @@ decision = evaluate(policy, event)
 
 ## Level 3: LangChain Integration
 
+!!! tip "LangChain 1.x agents"
+    For `create_agent` and Deep Agents, use the [middleware](langchain-agent.md): it blocks a
+    tool call without aborting the run and pauses for approval. The callback below is
+    deprecated (it can only raise).
+
 Add guardrails to any LangChain chain via callbacks — zero changes to your existing chain code.
 
 ```bash
