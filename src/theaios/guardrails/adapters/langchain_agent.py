@@ -235,7 +235,8 @@ class FlowMiddleware(AgentMiddleware):  # type: ignore[type-arg, unused-ignore]
             "type": APPROVAL_TYPE,
             "component": COMPONENT,
             "proposal_id": proposal.id,
-            "tool_call_id": str(request.tool_call.get("id") or ""),
+            "tool_call_id": str(request.tool_call.get("id") or "")[:MAX_ID],
+            "task": _task_key(request),  # the LangGraph task that asked (stable across resumes)
             "session": session,
             "agent": self._agent_of(request),
             "tool": proposal.tool,

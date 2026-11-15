@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A tool name the agent does not have (the model hallucinated it; LangChain answers "not a valid tool") tainted the session as if an undeclared tool had run.
 - Two identical tool calls with the same id (the model chooses ids), resumed together with one decision, ran the approved send twice: the executing claim is now keyed on the LangGraph task, never on the call id.
 - A tool result carrying an `artifact["theaios"]` structure built from content passed for another theaios check's refusal (the read was not observed, so no taint): refusals now carry an unforgeable per-process mark (`theaios.core.marks`, theaios-core 0.1.2).
-- The approval payload carries the asking call's `tool_call_id`.
+- The approval payload carries the asking call's `tool_call_id` (capped at 200 characters) and its LangGraph `task`.
 - Tool names longer than 200 characters are refused; call ids and tool names stored in the flow log are capped at 200 characters (the model chooses them).
 - Malformed or mismatched decisions left proposals pending that no run waited for; they are retired, and the refusal names both proposals.
 - Docs: Deep Agents' automatic `general-purpose` sub-agent (all tools, no middleware unless you give it), the built-in tools to declare, several pending approvals (resume by interrupt id, key on `proposal_id`), checkpointer, `pending()` across sessions, the middleware order.
